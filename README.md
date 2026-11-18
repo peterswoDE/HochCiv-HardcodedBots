@@ -152,7 +152,7 @@ Seeds; 96 je Mehrspielermodus; fair = 1/Spielerzahl):
 
 | Modus | tile2 | custom2 | tile3 | tile4 | orig4 | custom3 | custom4 |
 |---|---|---|---|---|---|---|---|
-| Siege | 65 % | 49 % | 34 % | 32 % | 32 % | 41 % | 26 % |
+| Siege | 65 % | 49 % | 46 % | 43 % | 41 % | 47 % | 44 % |
 | fair | 50 % | 50 % | 33 % | 25 % | 25 % | 33 % | 25 % |
 
 Auf custom2 gewinnt die KI gegen sich selbst als Sitz 1 rund 62 %, als Sitz 0 rund 38 %; manche
