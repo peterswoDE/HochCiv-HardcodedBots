@@ -135,7 +135,9 @@ Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Haupt
 `mil_scale`, `mil_from`, `chunk`, `hold`, `late_bonus`, `rails`.
 
 Stand gegen KI schwer: **tile2 etwa 55 %** (141/256), **custom2 etwa 44 %** (42/96; KI gegen KI
-gewinnt dort Sitz 1 häufiger, fair = 50 %). Wer zuerst eine Hauptstadt trifft, gewinnt meist
+gewinnt dort Sitz 1 häufiger, fair = 50 %).
+Mehrspieler (48 Seeds je Modus, fair = 1/Spielerzahl): tile3 38 %, tile4 35 %, orig4 27 %,
+custom3 31 %, custom4 29 %. Wer zuerst eine Hauptstadt trifft, gewinnt meist
 (eigener Ersttreffer: ~70 % Siege, Ersttreffer der KI: ~16 %). Offene Baustellen: Ersttreffer
 als zweiter Spieler, die nicht zur Eroberung führen, und auf custom2 die Wirtschaft ab Runde 6
 (die KI wächst dort schneller und gewinnt meist per Singularität).
