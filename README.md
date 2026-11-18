@@ -108,7 +108,9 @@ Sklavenwirtschaft und eine frühe Belagerung der nächsten feindlichen Hauptstad
 3. Angriff, wenn eine gewinnende Belagerung bezahlbar ist.
 4. Wirtschaft (`econ.py`): je Schritt alle Kandidaten (Forschung, Freiwahlen, Wachstum,
    Gründung, Straßen) auf Kopien ausprobieren, den besten Gewinn je ausgegebener Ressource
-   ausführen.
+   ausführen. Weicht der größte Gewinn davon ab, spielt der Bot beide Varianten auf einer Kopie
+   bis zum Zugende durch und nimmt die bessere (`lookahead`) – sonst wächst er oft die
+   Hauptstadt und hat danach die Nahrung für eine Gründung nicht mehr.
 5. Opfern (Sklaverei), Armeen sammeln, Rest in Macht.
 
 Angriffe und Verteidigung rechnen mit verdeckten Reserven: Opfern (Sklaverei), Alchemie
@@ -137,11 +139,12 @@ erforscht er die ganze Kette auf einmal (`sing_path`).
 
 Optionen (`--opt`): `stage_armies`, `from_round`, `defend`, `soft_share` (vorbeugende
 Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Hauptstadt),
-`routine_sac`, `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank`,
+`routine_sac`, `sac_from`/`slavery_from` (erst ab dieser Runde opfern bzw. Sklaverei
+nehmen), `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank`,
 `full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, `answer_claims`, und für die Wirtschaft
 (`econ`) `threat_w`, `threat_exp`, `grow_est`, `grow_margin`, `grow_step`, `coin_price`, `def_w`,
 `mil_scale`, `mil_from`, `chunk`, `chunk_k`, `chunk_r`, `w_city`, `hold`, `late_bonus`, `rails`,
-`method_first`, `sing_path`, `race_w`, `race_turns`, `race_mode`, `eta_h` (Horizont wie die KI
+`method_first`, `sing_path`, `lookahead`, `race_w`, `race_turns`, `race_mode`, `eta_h` (Horizont wie die KI
 nach der schnellsten Singularität kürzen; schwächer, daher aus).
 
 Stand gegen KI schwer (192 Seeds je Duell, custom2 auf 384 frischen, nicht zum Tunen benutzten
@@ -149,7 +152,7 @@ Seeds; 96 je Mehrspielermodus; fair = 1/Spielerzahl):
 
 | Modus | tile2 | custom2 | tile3 | tile4 | orig4 | custom3 | custom4 |
 |---|---|---|---|---|---|---|---|
-| Siege | 62 % | 43 % | 34 % | 32 % | 32 % | 41 % | 26 % |
+| Siege | 65 % | 49 % | 34 % | 32 % | 32 % | 41 % | 26 % |
 | fair | 50 % | 50 % | 33 % | 25 % | 25 % | 33 % | 25 % |
 
 Auf custom2 gewinnt die KI gegen sich selbst als Sitz 1 rund 62 %, als Sitz 0 rund 38 %; manche

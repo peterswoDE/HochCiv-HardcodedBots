@@ -12,6 +12,7 @@ answers what the income, population etc. of a copy are.
 """
 from __future__ import annotations
 
+import copy
 import math
 import heapq
 
@@ -97,7 +98,8 @@ class EconPlanner:
                  w_city: float = W_CITY, chunk_k: float = 2.5, chunk_r: float = 0.45,
                  method_first: bool = True, sing_path: bool = True,
                  race_w: float = 4.0, race_turns: float = 4.0,
-                 eta_h: bool = False, race_mode: str = "hold"):
+                 eta_h: bool = False, race_mode: str = "hold", lookahead: bool = True):
+        self.lookahead = lookahead
         self.alch_bonus = alch_bonus
         self.chunk = chunk
         self.threat_exp = threat_exp
@@ -418,6 +420,22 @@ class EconPlanner:
         return [(tag, tiles) for _, tag, tiles in plans]
 
     # ------------------------------------------------------------------ plan
+    def rollout(self, acts, max_steps: int = 20) -> float:
+        """Value at the end of the turn after acts and then the greedy plan, on a copy."""
+        f = self.t.fork()
+        try:
+            for a, p in acts:
+                if f.act(a, **p):
+                    return float("-inf")
+            sub = copy.copy(self)
+            sub.t, sub.lookahead = f, False
+            sub.run(max_steps)
+            res = f.call(sub.calls())
+            sub._ncities = len(f.cities())
+            return sub.value(res)[0]
+        finally:
+            f.close()
+
     def run(self, max_steps: int = 40, keep_coins: int = 0) -> list:
         t = self.t
         done = []
@@ -469,6 +487,11 @@ class EconPlanner:
             # whenever this step pays a tech and the method is worth something on its own
             if self.method_first and method and best[2].startswith("tech:") and best is not method:
                 best = method
+            # cheap now vs. big now: play both plans to the end of the turn on a copy and keep
+            # the better end (a growth step can eat the food a new city needs)
+            if self.lookahead and top is not best and top[2] != best[2]:
+                if self.rollout(top[3]) > self.rollout(best[3]):
+                    best = top
             _, dv, tag, acts = best
             err = None
             for a, p in acts:

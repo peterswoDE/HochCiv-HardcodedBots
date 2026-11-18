@@ -48,7 +48,7 @@ class Rusher:
 
     def __init__(self, stage_armies: int = STAGE_ARMIES, from_round: int = FROM_ROUND,
                  sacrifice_capital: bool = True, routine_sac: bool = True, soft_share: float = 0.0, defend: bool = True,
-                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, full_threat: bool = True, hold_siege: bool = True, hold_stahl: bool = False, answer_claims: bool = True, sac_safe: bool = False, def_techs: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
+                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, full_threat: bool = True, hold_siege: bool = True, hold_stahl: bool = False, answer_claims: bool = True, sac_from: int = 1, slavery_from: int = 1, sac_safe: bool = False, def_techs: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
                  **econ):
         self.strike_sac, self.strike_alch, self.defend_prep = strike_sac, strike_alch, defend_prep
         self.counter_flank = counter_flank
@@ -66,6 +66,8 @@ class Rusher:
         self.from_round = from_round
         self.sacrifice_capital = sacrifice_capital
         self.routine_sac = routine_sac
+        self.sac_from = sac_from
+        self.slavery_from = slavery_from
 
     # ------------------------------------------------------------------ placement
     def place(self, seat, plan):
@@ -101,10 +103,12 @@ class Rusher:
         econ = dict(self.econ)
         if self.hold_siege:
             econ.setdefault("hold", self.held())
+        if t.round < self.slavery_from:
+            econ["hold"] = tuple(econ.get("hold", ())) + ("sklaverei",)
         self.plan_log = EconPlanner(t, pool, self.slavery_pays(), **econ).run()
         if t.over:
             return
-        if self.routine_sac:
+        if self.routine_sac and t.round >= self.sac_from:
             self.sacrifice_all()
         self.military()
         if t.over:
