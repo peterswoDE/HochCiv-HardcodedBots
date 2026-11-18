@@ -116,18 +116,29 @@ Angriffe und Verteidigung rechnen mit verdeckten Reserven: Opfern (Sklaverei), A
 Burgenbau. Die KI-Schätzung zählt nur bereits erforschte Angriffstechniken, deshalb hält
 der Bot Belagerung und Dynamit zurück, bis der Angriff steht (`hold_siege`). Die Bedrohung
 durch Feinde wird als schlimmster Fall über deren Forschungsmöglichkeiten geschätzt
-(`full_threat`).
+(`full_threat`). Wie viel der Feind im eigenen Zug noch wachsen kann, schätzt
+`enemy_growth` aus seinem Einkommen (Wachstum und Gründungen, gierig nach Preis).
+
+Meldet ein Gegner einen Sieg an (Wirtschaft, Singularität), plant der Bot den Rest der Runde
+mit `ClaimPlanner`: eigene Anmeldung erreichen oder den Punktestand (Bevölkerung + Techniken)
+übertreffen (`answer_claims`).
+
+Späte Techniken werden wie bei der KI bewertet (`late_bonus`: Eisenbahn, Computertechnik,
+Verbundwerkstoffe, Massenmedien/Gentechnik); mit Eisenbahn baut der Bot die Wege zu seinen
+Städten zu Schienen aus (`rails`, +4 statt +1 Handelsertrag je Stadt).
 
 Optionen (`--opt`): `stage_armies`, `from_round`, `defend`, `soft_share` (vorbeugende
 Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Hauptstadt),
 `routine_sac`, `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank`,
-`full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, und für die Wirtschaft (`econ`)
-`threat_w`, `grow_step`, `coin_price`, `def_w`, `mil_scale`, `mil_from`, `chunk`, `hold`.
+`full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, `answer_claims`, und für die Wirtschaft
+(`econ`) `threat_w`, `threat_exp`, `grow_est`, `grow_margin`, `grow_step`, `coin_price`, `def_w`,
+`mil_scale`, `mil_from`, `chunk`, `hold`, `late_bonus`, `rails`.
 
-Stand (256 Seeds, tile2, gegen KI schwer): **etwa 54 %** (138/256). Wer zuerst eine
-Hauptstadt trifft, gewinnt meist (eigener Ersttreffer: ~70 % Siege, Ersttreffer der KI:
-~16 %). Offene Baustelle: Ersttreffer als zweiter Spieler, die nicht zur Eroberung führen –
-danach gewinnt die KI oft über Wirtschaft oder Wissenschaft.
+Stand gegen KI schwer: **tile2 etwa 55 %** (141/256), **custom2 etwa 44 %** (42/96; KI gegen KI
+gewinnt dort Sitz 1 häufiger, fair = 50 %). Wer zuerst eine Hauptstadt trifft, gewinnt meist
+(eigener Ersttreffer: ~70 % Siege, Ersttreffer der KI: ~16 %). Offene Baustellen: Ersttreffer
+als zweiter Spieler, die nicht zur Eroberung führen, und auf custom2 die Wirtschaft ab Runde 6
+(die KI wächst dort schneller und gewinnt meist per Singularität).
 
 ## Einrichten
 

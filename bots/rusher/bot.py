@@ -19,7 +19,7 @@ import math
 
 from hcbots.hexgrid import hex_distance, neighbors, within
 
-from .econ import EconPlanner
+from .econ import ClaimPlanner, EconPlanner
 
 # Techs bought first, in this order, whenever available and affordable.
 PRIORITY = ["sklaverei", "eisenverarbeitung", "belagerung", "demokratie", "taktik",
@@ -48,7 +48,7 @@ class Rusher:
 
     def __init__(self, stage_armies: int = STAGE_ARMIES, from_round: int = FROM_ROUND,
                  sacrifice_capital: bool = True, routine_sac: bool = True, soft_share: float = 0.0, defend: bool = True,
-                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, full_threat: bool = True, hold_siege: bool = True, hold_stahl: bool = False, sac_safe: bool = False, def_techs: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
+                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, full_threat: bool = True, hold_siege: bool = True, hold_stahl: bool = False, answer_claims: bool = True, sac_safe: bool = False, def_techs: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
                  **econ):
         self.strike_sac, self.strike_alch, self.defend_prep = strike_sac, strike_alch, defend_prep
         self.counter_flank = counter_flank
@@ -57,6 +57,7 @@ class Rusher:
         self.hold_siege = hold_siege
         self.hold_stahl = hold_stahl
         self.sac_safe = sac_safe
+        self.answer_claims = answer_claims
         self.garrison_max, self.garrison_k, self.garrison_share = garrison_max, garrison_k, garrison_share
         self.soft_share = soft_share
         self.use_defend = defend
@@ -86,6 +87,8 @@ class Rusher:
         # a siege that takes the target capital this turn wins the game: first
         if tgt and (t.S.get("sieges") or {}).get(f"{t.pi}|{tgt['id']}", 0) >= 1 and self.strike(tgt):
             return
+        if self.answer_claims and self.answer_claim():
+            return
         if self.use_defend:
             self.defend()
         if self.garrison_max:
@@ -108,6 +111,20 @@ class Rusher:
             return
         self.leave_cities()
         self.spend_rest()
+
+    def answer_claim(self) -> bool:
+        """An enemy claimed a victory this round: no capture possible, so only a claim of my
+        own with more points (population + techs) at the end of the round still wins."""
+        t = self.t
+        claims = [c for c in (t.S.get("claims") or []) if c["pi"] != t.pi]
+        if not claims or t.S.get("endRound") != t.round:
+            return False
+        target = 0
+        for c in claims:
+            p = t.S["players"][c["pi"]]
+            target = max(target, sum(x["pop"] for x in t.cities(c["pi"])) + sum(1 for v in p["techs"].values() if v))
+        self.plan_log = ClaimPlanner(t, t.q("techPool", "$S") or [], target).run(max_steps=60)
+        return True
 
     def sacrifice_all(self):
         t = self.t

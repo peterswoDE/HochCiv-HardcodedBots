@@ -32,6 +32,56 @@ MIL_BONUS = {"sklaverei": 40, "belagerung": 60, "eisenverarbeitung": 6, "demokra
              "maschinengewehr": 10, "theologie": 3, "philosophie": 4, "navigation": 5}
 
 
+def enemy_growth(t, e: int) -> int:
+    """Most population enemy e can add in its next turn: its resources then are its income
+    (they reset each turn); every city grows up to its paid steps (cost 1 food + 1 coin per
+    population), new cities cost 1/3/6/... + distance food; the cheapest steps first, and no
+    more growth than the food income carries (unless gentechnik/massenmedien)."""
+    p = t.S["players"][e]
+    inc, base, rates, lim = t.call([("income", "$S", e), ("baseIncome", "$S", e), ("rates", "$S", e),
+                                    ("growLimits", "$S", e)])
+    if not inc:
+        return 2 + len(t.cities(e))
+    food, coins = inc["food"], inc["coins"]
+    if p["techs"].get("alchemie"):
+        coins += inc["sci"]
+    c2f = rates.get("coinsToFood", 2) if rates else 2
+    cities = t.cities(e)
+    prices = t.call([("growPrice", "$S", e, {"$city": c["id"]}) for c in cities])
+    units = []
+    for c, pr in zip(cities, prices):
+        if not pr:
+            continue
+        n = max(1, c["pop"])
+        for k in range((lim or {}).get("paid", 1)):
+            sc = (c["pop"] + k) / n
+            units.append((pr["food"] * sc, pr["coins"] * sc, "g"))
+        for k in range((lim or {}).get("free", 0)):
+            units.append((0, 0, "f"))
+    m = len(cities)
+    for k in range(4):
+        units.append((max(1, (m + k) * (m + k + 1) // 2 + 3), 0, "c"))
+    units.sort(key=lambda u: u[0] * c2f + u[1])
+    feed = p["techs"].get("gentechnik") or p["techs"].get("massenmedien")
+    cap = 99 if feed else max(0, (base or inc)["food"])
+    grow = 0
+    for f, c, kind in units:
+        if kind == "g" and cap <= 0:
+            continue
+        if c > coins:
+            continue
+        rest = coins - c
+        need = max(0, f - food)
+        if need * c2f > rest:
+            continue
+        food -= min(food, f)
+        coins = rest - need * c2f
+        grow += 1
+        if kind == "g":
+            cap -= 1
+    return grow
+
+
 def horizon(rnd: int) -> float:
     r = max(1, min(8, END_ROUND - rnd + 1))
     return sum(GAMMA ** i for i in range(r))
@@ -40,9 +90,14 @@ def horizon(rnd: int) -> float:
 class EconPlanner:
     def __init__(self, t, pool: list, slavery_pays: bool, threat_w: float = THREAT_W,
                  grow_step: float = GROW_STEP, coin_price: float = PRICE["coins"], def_w: float = 0.0,
-                 alch_bonus: float = 0.0, chunk: bool = True, hold=(), mil_scale: float = 1.0, mil_from: int = 1):
+                 alch_bonus: float = 0.0, chunk: bool = True, hold=(), mil_scale: float = 1.0, mil_from: int = 1,
+                 grow_est: bool = True, grow_margin: int = 1, threat_exp: float = 10,
+                 late_bonus: bool = True, rails: bool = True):
         self.alch_bonus = alch_bonus
         self.chunk = chunk
+        self.threat_exp = threat_exp
+        self.late_bonus, self.rails = late_bonus, rails
+        self._pop = 0
         self.hold = set(hold)      # techs left to the strike (researched in the turn they hit)
         # military bonus only from round mil_from on (scaled): the rush techs crowd out the economy
         self.mil_scale = mil_scale if t.round >= mil_from else 0.0
@@ -61,7 +116,7 @@ class EconPlanner:
         for e in t.enemies():
             vo = t.q("victoryOption", "$S", {"$player": e})
             pop = sum(c["pop"] for c in t.cities(e))
-            grow = 2 + len(t.cities(e)) if self.moves_after(e) else 0
+            grow = (enemy_growth(t, e) + grow_margin if grow_est else 2 + len(t.cities(e))) if self.moves_after(e) else 0
             if vo and vo.get("frac"):
                 self.threats.append((pop + grow, grow, vo["frac"]))
 
@@ -99,6 +154,16 @@ class EconPlanner:
             v += 0.12 * H * max(0, inc["coins"]) + 2
         elif k == "wiss_methode":
             v += 18 + 4 * min(4, H)
+        elif self.late_bonus:
+            if k == "eisenbahn":
+                # +4 instead of +1 on all three yields per city on a continuous rail line
+                v += 3.0 * H * max(0, ncities - 1) + 2
+            elif k == "computertechnik":
+                v += 0.2 * H * max(0, inc["coins"]) + 3
+            elif k == "verbundwerkstoffe":
+                v += ncities * H * max(1, H) / 3
+            elif k in ("massenmedien", "gentechnik"):
+                v += 0.3 * H * min(self._pop, 20) / 2 + 3
         t = self.pool.get(k)
         if t and t["age"] >= 3 and self.slavery_pays:
             v -= 15                         # the modern age ends slavery
@@ -106,6 +171,7 @@ class EconPlanner:
 
     def value(self, res) -> tuple[float, dict]:
         inc, pop, world, vo, p, dcap = res
+        self._pop = pop
         techs = [k for k, v in (p or {}).get("techs", {}).items() if v]
         ncities = self._ncities
         v = self.H * sum(W[r] * inc[r] for r in W)
@@ -125,7 +191,7 @@ class EconPlanner:
             v += 40 * q ** 6
         for epop, grow, frac in self.threats:
             q = min(1.3, epop / max(1, world + grow) / frac)
-            v -= self.threat_w * q ** 10
+            v -= self.threat_w * q ** self.threat_exp
         return v, p["res"]
 
     # ------------------------------------------------------------------ candidates
@@ -153,6 +219,9 @@ class EconPlanner:
         if t.has("rad"):
             for tag, tiles in self.road_plans()[:4]:
                 out.append((tag, [("buildRoad", {"r": r, "c": c, "target": 1}) for r, c in tiles]))
+        if self.rails and t.has("eisenbahn"):
+            for tag, tiles in self.road_plans(2)[:4]:
+                out.append(("rail" + tag[4:], [("buildRoad", {"r": r, "c": c, "target": 2}) for r, c in tiles]))
         return out
 
     def sites(self):
@@ -185,7 +254,7 @@ class EconPlanner:
         scored.sort(reverse=True)
         return [(r, c) for _, r, c in scored]
 
-    def road_plans(self):
+    def road_plans(self, level: int = 1):
         """For every own city off the capital's road net: the cheapest tiles to connect it
         (Dijkstra over own or neutral land, a tile with road or an own city costs nothing)."""
         t = self.t
@@ -201,7 +270,7 @@ class EconPlanner:
         other_city = {(c["r"], c["c"]) for c in t.S["cities"]} - own_city
 
         def free(rc):
-            return rc in own_city or roads.get(key(*rc), 0) >= 1
+            return rc in own_city or roads.get(key(*rc), 0) >= level
 
         def ok(rc):
             return (t.grid.is_tile(*rc) and t.grid.terrain(*rc) not in ("M",)
@@ -307,3 +376,28 @@ class EconPlanner:
             else:
                 done.append((tag, round(dv, 1)))
         return done
+
+
+class ClaimPlanner(EconPlanner):
+    """An enemy has claimed a victory this round (singularity): the round ends with a points
+    comparison (population + techs) among everyone who claimed by then. Value: having a
+    claim myself (singularity, or the economy threshold at the end of the round) and beating
+    the best claimant's points; every step tried on a copy like the economy planner."""
+
+    def __init__(self, t, pool: list, target: int, **kw):
+        kw.setdefault("hold", ())
+        super().__init__(t, pool, False, **kw)
+        self.target = target
+        self.mine = any(c["pi"] == t.pi for c in (t.S.get("claims") or []))
+
+    def value(self, res):
+        inc, pop, world, vo, p, dcap = res
+        techs = sum(1 for v in (p or {}).get("techs", {}).values() if v)
+        claim = self.mine or bool(p["techs"].get("singularitaet"))
+        if not claim and vo and world and len(self.t.S["cities"]) > 1 and vo.get("den"):
+            claim = pop * vo["den"] > world * vo["num"] if vo.get("strict") else pop * vo["den"] >= world * vo["num"]
+        s = pop + techs
+        # progress towards the singularity: a modern tech in each field
+        modern = {self.pool[k]["f"] for k, on in p["techs"].items() if on and k in self.pool and self.pool[k]["age"] >= 3}
+        v = 8 * len(modern) + 1000 * claim + 40 * min(1, max(0, s - self.target + 1)) + 40 * min(1, max(0, s - self.target)) + s
+        return v, p["res"]
