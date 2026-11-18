@@ -125,22 +125,33 @@ mit `ClaimPlanner`: eigene Anmeldung erreichen oder den Punktestand (Bevölkerun
 
 Späte Techniken werden wie bei der KI bewertet (`late_bonus`: Eisenbahn, Computertechnik,
 Verbundwerkstoffe, Massenmedien/Gentechnik); mit Eisenbahn baut der Bot die Wege zu seinen
-Städten zu Schienen aus (`rails`, +4 statt +1 Handelsertrag je Stadt).
+Städten zu Schienen aus (`rails`, +4 statt +1 Handelsertrag je Stadt). Wie die KI nimmt er
+die Wissenschaftliche Methode vor jeder anderen bezahlten Technik (`method_first`).
+
+Singularitätsrennen: Liegt ein Reich (er selbst oder ein Gegner) höchstens `race_turns` Runden
+vor der Singularität, zählt jede Wissenschaft, die vom restlichen Weg dorthin fehlt, mit
+`race_w` gegen den Plan – der Bot spart, statt in Wachstum zu stecken. Reicht es in einem Zug,
+erforscht er die ganze Kette auf einmal (`sing_path`).
 
 Optionen (`--opt`): `stage_armies`, `from_round`, `defend`, `soft_share` (vorbeugende
 Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Hauptstadt),
 `routine_sac`, `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank`,
 `full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, `answer_claims`, und für die Wirtschaft
 (`econ`) `threat_w`, `threat_exp`, `grow_est`, `grow_margin`, `grow_step`, `coin_price`, `def_w`,
-`mil_scale`, `mil_from`, `chunk`, `hold`, `late_bonus`, `rails`.
+`mil_scale`, `mil_from`, `chunk`, `chunk_k`, `chunk_r`, `w_city`, `hold`, `late_bonus`, `rails`,
+`method_first`, `sing_path`, `race_w`, `race_turns`.
 
-Stand gegen KI schwer: **tile2 etwa 55 %** (141/256), **custom2 etwa 44 %** (42/96; KI gegen KI
-gewinnt dort Sitz 1 häufiger, fair = 50 %).
-Mehrspieler (48 Seeds je Modus, fair = 1/Spielerzahl): tile3 38 %, tile4 35 %, orig4 27 %,
-custom3 31 %, custom4 29 %. Wer zuerst eine Hauptstadt trifft, gewinnt meist
-(eigener Ersttreffer: ~70 % Siege, Ersttreffer der KI: ~16 %). Offene Baustellen: Ersttreffer
-als zweiter Spieler, die nicht zur Eroberung führen, und auf custom2 die Wirtschaft ab Runde 6
-(die KI wächst dort schneller und gewinnt meist per Singularität).
+Stand gegen KI schwer (192 Seeds je Duell, 96 je Mehrspielermodus; fair = 1/Spielerzahl):
+
+| Modus | tile2 | custom2 | tile3 | tile4 | orig4 | custom3 | custom4 |
+|---|---|---|---|---|---|---|---|
+| Siege | 62 % | 50 % | 34 % | 32 % | 32 % | 41 % | 26 % |
+| fair | 50 % | 50 % | 33 % | 25 % | 25 % | 33 % | 25 % |
+
+Auf custom2 gewinnt die KI gegen sich selbst als Sitz 1 rund 62 %, als Sitz 0 rund 38 %; manche
+Starts sind für beide aussichtslos (kaum Nahrung). Wer zuerst eine Hauptstadt trifft, gewinnt
+meist. Offene Baustellen: Ersttreffer als zweiter Spieler, die nicht zur Eroberung führen, und
+Singularitätsrennen, in denen die KI zuerst ankommt.
 
 ## Einrichten
 
