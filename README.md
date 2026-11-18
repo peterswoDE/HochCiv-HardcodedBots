@@ -111,14 +111,23 @@ Sklavenwirtschaft und eine frühe Belagerung der nächsten feindlichen Hauptstad
    ausführen.
 5. Opfern (Sklaverei), Armeen sammeln, Rest in Macht.
 
+Angriffe und Verteidigung rechnen mit verdeckten Reserven: Opfern (Sklaverei), Alchemie
+(Wissenschaft → Münzen) und noch nicht erforschte Belagerung/Dynamit bzw. Stadtmauern/
+Burgenbau. Die KI-Schätzung zählt nur bereits erforschte Angriffstechniken, deshalb hält
+der Bot Belagerung und Dynamit zurück, bis der Angriff steht (`hold_siege`). Die Bedrohung
+durch Feinde wird als schlimmster Fall über deren Forschungsmöglichkeiten geschätzt
+(`full_threat`).
+
 Optionen (`--opt`): `stage_armies`, `from_round`, `defend`, `soft_share` (vorbeugende
 Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Hauptstadt),
-und für die Wirtschaft `threat_w`, `grow_step`, `coin_price`, `def_w`.
+`routine_sac`, `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank`,
+`full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, und für die Wirtschaft (`econ`)
+`threat_w`, `grow_step`, `coin_price`, `def_w`, `mil_scale`, `mil_from`, `chunk`, `hold`.
 
-Stand (64 Seeds, tile2, gegen KI schwer): **etwa 42 %** – noch unter dem fairen Anteil.
-Niederlagen vor allem durch frühe Eroberung der eigenen Hauptstadt (Runde 4–6), danach
-Singularität der KI und Wirtschaftssieg. Vorbeugende Macht, Garnison und Gewicht auf die
-Verteidigung der Hauptstadt brachten bisher nichts Messbares.
+Stand (256 Seeds, tile2, gegen KI schwer): **etwa 54 %** (138/256). Wer zuerst eine
+Hauptstadt trifft, gewinnt meist (eigener Ersttreffer: ~70 % Siege, Ersttreffer der KI:
+~16 %). Offene Baustelle: Ersttreffer als zweiter Spieler, die nicht zur Eroberung führen –
+danach gewinnt die KI oft über Wirtschaft oder Wissenschaft.
 
 ## Einrichten
 

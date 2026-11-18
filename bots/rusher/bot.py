@@ -47,11 +47,16 @@ class Rusher:
     name = "rusher"
 
     def __init__(self, stage_armies: int = STAGE_ARMIES, from_round: int = FROM_ROUND,
-                 sacrifice_capital: bool = True, soft_share: float = 0.0, defend: bool = True,
-                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
+                 sacrifice_capital: bool = True, routine_sac: bool = True, soft_share: float = 0.0, defend: bool = True,
+                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, full_threat: bool = True, hold_siege: bool = True, hold_stahl: bool = False, sac_safe: bool = False, def_techs: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
                  **econ):
         self.strike_sac, self.strike_alch, self.defend_prep = strike_sac, strike_alch, defend_prep
         self.counter_flank = counter_flank
+        self.def_techs = def_techs
+        self.full_threat = full_threat
+        self.hold_siege = hold_siege
+        self.hold_stahl = hold_stahl
+        self.sac_safe = sac_safe
         self.garrison_max, self.garrison_k, self.garrison_share = garrison_max, garrison_k, garrison_share
         self.soft_share = soft_share
         self.use_defend = defend
@@ -59,6 +64,7 @@ class Rusher:
         self.stage_armies = stage_armies
         self.from_round = from_round
         self.sacrifice_capital = sacrifice_capital
+        self.routine_sac = routine_sac
 
     # ------------------------------------------------------------------ placement
     def place(self, seat, plan):
@@ -89,10 +95,14 @@ class Rusher:
         if t.over:
             return
         pool = t.q("techPool", "$S") or []
-        self.plan_log = EconPlanner(t, pool, self.slavery_pays(), **self.econ).run()
+        econ = dict(self.econ)
+        if self.hold_siege:
+            econ.setdefault("hold", self.held())
+        self.plan_log = EconPlanner(t, pool, self.slavery_pays(), **econ).run()
         if t.over:
             return
-        self.sacrifice_all()
+        if self.routine_sac:
+            self.sacrifice_all()
         self.military()
         if t.over:
             return
@@ -371,11 +381,38 @@ class Rusher:
                 x["k"] == "alchemie" for x in (t.q("researchable", "$S", t.pi) or [])):
             alch.append(True)
         sac = (0, 1, 2) if self.strike_sac and t.q("slaveryUsable", {"$player": t.pi}) else (0,)
-        return [(a, s) for s in sac for a in alch]
+        out = [(a, s) for s in sac for a in alch]
+        if self.hold_siege:
+            # siege engines and dynamite only in the turn of the hit: the KI counts them only
+            # once I have them, so its defense before the hit is too low
+            open_ = {x["k"] for x in (t.q("researchable", "$S", t.pi) or [])}
+            techs = [k for k in self.held() if k in open_]
+            combos = [()] + [(k,) for k in techs] + ([tuple(techs)] if len(techs) >= 2 else [])
+            out = [p + (c,) for c in combos for p in out]
+        return out
+
+    def held(self):
+        return ("belagerung", "dynamit") + (("stahl",) if self.hold_stahl else ())
+
+    def defense_preps(self):
+        """Preparations for holding a city, cheapest first: the strike preps (without
+        sacrificing the capital) and each with the defense techs research can still buy now
+        (walls +5, castles: power once more in every city)."""
+        t = self.t
+        base = [p[:2] for p in self.strike_preps() if p[1] < 2 and not (len(p) > 2 and p[2])]
+        if not self.def_techs:
+            return base
+        open_ = {x["k"] for x in (t.q("researchable", "$S", t.pi) or [])}
+        techs = [k for k in ("stadtmauern", "burgenbau") + (("stahl",) if self.hold_stahl else ()) if k in open_]
+        combos = [()] + [(k,) for k in techs] + ([tuple(techs)] if len(techs) >= 2 else [])
+        return [p + (c,) for c in combos for p in base]
 
     def prepare(self, t, prep) -> bool:
         """Run a preparation on t; True if it failed."""
-        alch, sac = prep
+        alch, sac = prep[:2]
+        for k in (prep[2] if len(prep) > 2 else ()):
+            if t.act("research", tech=k):
+                return True
         if alch and t.act("research", tech="alchemie"):
             return True
         if sac:
@@ -384,9 +421,16 @@ class Rusher:
 
     def sacrifice_for_strike(self, t, level):
         """Coins for a strike from slavery: level 1 all cities but the capital, 2 the capital too."""
-        for city in sorted(t.cities(), key=lambda c: -c["pop"]):
-            if city["pop"] >= 2 and (level >= 2 or not city.get("cap")):
-                t.act("sacrifice", cityId=city["id"])
+        saved, self.t = self.t, t
+        try:
+            for city in sorted(t.cities(), key=lambda c: -c["pop"]):
+                if city["pop"] >= 2 and (level >= 2 or not city.get("cap")):
+                    # never hand an enemy the economy victory at the end of the round
+                    if self.sac_safe and not self.econ_safe(-1):
+                        break
+                    t.act("sacrifice", cityId=city["id"])
+        finally:
+            self.t = saved
 
     def run_strike(self, t, tgt, extra, build):
         saved, self.t = self.t, t          # the helpers ask self.t – here the fork
@@ -524,26 +568,58 @@ class Rusher:
                 continue
             p0 = p0 or 0
             pw0 = p0 - math.ceil(p0 / (div or 2))
-            budget = (inc or {}).get("coins", 0)
-            if ep["techs"].get("sklaverei"):
-                budget += 7 * sum(1 for c in t.cities(e) if c["pop"] >= 2)
             price = max(price or 5, 1)
             n_armies = len(t.armies(e))
             mult = max(1, (acost or 5) // max(1, n_armies + 1))
-            spent = 0
-            for j in range(0, builders + 1):
-                if j:
-                    spent += mult * (n_armies + j)
-                if spent > budget:
-                    break
-                k = min(k0 + j, slots)
-                if k <= 0:
-                    continue
-                per = pw0 + (budget - spent) // price
-                per += 3 if ep["techs"].get("belagerung") else 0
-                per *= 2 if ep["techs"].get("dynamit") else 1
-                worst = max(worst, k * per)
+            for budget, siege in self.enemy_budgets(e, inc):
+                spent = 0
+                for j in range(0, builders + 1):
+                    if j:
+                        spent += mult * (n_armies + j)
+                    if spent > budget:
+                        break
+                    k = min(k0 + j, slots)
+                    if k <= 0:
+                        continue
+                    per = pw0 + (budget - spent) // price
+                    per += 3 if siege else 0
+                    per *= 2 if ep["techs"].get("dynamit") else 1
+                    worst = max(worst, k * per)
         return worst
+
+    def enemy_budgets(self, e, inc):
+        """The coin budgets enemy e can have for an attack in its next turn, each with whether
+        it has siege engines then: its coins left plus income, slavery, and what its science
+        buys in that turn - alchemie (science becomes coins 1:1), siege engines, slavery."""
+        t = self.t
+        key_ = (t.round, len(t.actions), e)
+        if getattr(self, "_eb", (None,))[0] == key_:
+            return self._eb[1]
+        ep = t.S["players"][e]
+        has = lambda k: bool(ep["techs"].get(k))
+        inc = inc or {}
+        coins = (ep["res"].get("coins", 0) or 0) + inc.get("coins", 0)
+        sci = (ep["res"].get("sci", 0) or 0) + inc.get("sci", 0)
+        sacs = 7 * sum(1 for c in t.cities(e) if c["pop"] >= 2)
+        cost = {}
+        if self.full_threat:
+            open_ = [x for x in (t.q("researchable", "$S", e) or []) if x["k"] in ("alchemie", "belagerung", "sklaverei")]
+            if open_:
+                cost = dict(zip([x["k"] for x in open_], t.call([("techCost", "$S", e, x) for x in open_])))
+        out = []
+        for alch in ((False, True) if "alchemie" in cost else (has("alchemie"),)):
+            for siege in ((False, True) if "belagerung" in cost else (has("belagerung"),)):
+                for slav in ((False, True) if "sklaverei" in cost else (has("sklaverei"),)):
+                    left = sci - sum(cost[k] or 0 for k, on in (("alchemie", alch), ("belagerung", siege),
+                                                                ("sklaverei", slav)) if on and k in cost)
+                    if left < 0:
+                        continue
+                    b = coins + (sacs if slav else 0) + (left if alch and self.full_threat else 0)
+                    if not self.full_threat:
+                        b = inc.get("coins", 0) + (sacs if has("sklaverei") else 0)
+                    out.append((b, siege))
+        self._eb = (key_, out)
+        return out
 
     def ring(self, city, rng):
         t = self.t
@@ -566,7 +642,7 @@ class Rusher:
             if hit:
                 preps = [(False, 0)]
                 if self.defend_prep and city.get("cap"):
-                    preps = [p for p in self.strike_preps() if p[1] < 2]
+                    preps = self.defense_preps()
                 plan = None
                 self.last_margin = None
                 for prep in preps:

@@ -40,8 +40,12 @@ def horizon(rnd: int) -> float:
 class EconPlanner:
     def __init__(self, t, pool: list, slavery_pays: bool, threat_w: float = THREAT_W,
                  grow_step: float = GROW_STEP, coin_price: float = PRICE["coins"], def_w: float = 0.0,
-                 alch_bonus: float = 0.0):
+                 alch_bonus: float = 0.0, chunk: bool = True, hold=(), mil_scale: float = 1.0, mil_from: int = 1):
         self.alch_bonus = alch_bonus
+        self.chunk = chunk
+        self.hold = set(hold)      # techs left to the strike (researched in the turn they hit)
+        # military bonus only from round mil_from on (scaled): the rush techs crowd out the economy
+        self.mil_scale = mil_scale if t.round >= mil_from else 0.0
         self.t = t
         self.def_w = def_w
         cap = t.capital()
@@ -79,7 +83,7 @@ class EconPlanner:
         H = self.H
         if k == "singularitaet":
             return 5000
-        v = MIL_BONUS.get(k, 0)
+        v = MIL_BONUS.get(k, 0) * self.mil_scale
         # one more paid growth step per city and round: growth is the bottleneck
         if k == "keramik":
             v += self.grow_step * H * min(ncities, 8)
@@ -132,11 +136,13 @@ class EconPlanner:
         open_ = t.q("researchable", "$S", t.pi) or []
         costs = t.call([("techCost", "$S", t.pi, x) for x in open_])
         for x, c in zip(open_, costs):
-            if c is not None and c <= sci:
+            if c is not None and c <= sci and x["k"] not in self.hold:
                 out.append(("tech:" + x["k"], [("research", {"tech": x["k"]})]))
         for kind, fn in (("freeTech", "freeTechOptions"), ("backPick", "backPickOptions"),
                          ("freePick", "freePickOptions")):
             for x in t.q(fn, "$S", t.pi) or []:
+                if x["k"] in self.hold:
+                    continue
                 out.append(("pick:" + x["k"], [(kind, {"tech": x["k"]})]))
         for city in t.cities():
             cid = city["id"]
@@ -264,6 +270,7 @@ class EconPlanner:
                 break
             base, before = self.value(res[0])
             best = None
+            top = None
             for (tag, acts), r in zip(cands, res[1:]):
                 if r is None:
                     continue
@@ -281,8 +288,14 @@ class EconPlanner:
                 ratio = dv / (max(0, spent) + 2)
                 if best is None or ratio > best[0]:
                     best = (ratio, dv, tag, acts)
+                if top is None or dv > top[1]:
+                    top = (ratio, dv, tag, acts)
             if best is None:
                 break
+            # big chunks: an action worth much more in total wins if its ratio is not much
+            # worse (else small things eat the food a new city needs)
+            if self.chunk and top is not best and top[1] > 2.5 * best[1] and top[0] > 0.45 * best[0]:
+                best = top
             _, dv, tag, acts = best
             err = None
             for a, p in acts:
