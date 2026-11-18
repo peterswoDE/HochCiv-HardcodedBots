@@ -39,7 +39,9 @@ def horizon(rnd: int) -> float:
 
 class EconPlanner:
     def __init__(self, t, pool: list, slavery_pays: bool, threat_w: float = THREAT_W,
-                 grow_step: float = GROW_STEP, coin_price: float = PRICE["coins"], def_w: float = 0.0):
+                 grow_step: float = GROW_STEP, coin_price: float = PRICE["coins"], def_w: float = 0.0,
+                 alch_bonus: float = 0.0):
+        self.alch_bonus = alch_bonus
         self.t = t
         self.def_w = def_w
         cap = t.capital()
@@ -88,7 +90,7 @@ class EconPlanner:
         elif k == "kartografie":
             v += 1.5 * max(0, 7 - ncities) + 1
         elif k == "alchemie":
-            v += 0.12 * H * max(0, inc["sci"]) + 2
+            v += 0.12 * H * max(0, inc["sci"]) + 2 + self.alch_bonus
         elif k == "gilden":
             v += 0.12 * H * max(0, inc["coins"]) + 2
         elif k == "wiss_methode":

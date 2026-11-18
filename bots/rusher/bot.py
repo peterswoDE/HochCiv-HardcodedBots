@@ -48,8 +48,10 @@ class Rusher:
 
     def __init__(self, stage_armies: int = STAGE_ARMIES, from_round: int = FROM_ROUND,
                  sacrifice_capital: bool = True, soft_share: float = 0.0, defend: bool = True,
-                 garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
+                 strike_sac: bool = True, strike_alch: bool = True, defend_prep: bool = True, counter_flank: bool = True, garrison_max: int = 0, garrison_k: float = 1.0, garrison_share: float = 1.0,
                  **econ):
+        self.strike_sac, self.strike_alch, self.defend_prep = strike_sac, strike_alch, defend_prep
+        self.counter_flank = counter_flank
         self.garrison_max, self.garrison_k, self.garrison_share = garrison_max, garrison_k, garrison_share
         self.soft_share = soft_share
         self.use_defend = defend
@@ -103,6 +105,8 @@ class Rusher:
             return
         for city in sorted(t.cities(), key=lambda c: -c["pop"]):
             if city["pop"] < 2 or not self.econ_safe(-1):
+                continue
+            if city.get("cap") and not self.sacrifice_capital:
                 continue
             if city.get("cap"):
                 rng = t.q("attackRange", "$S", t.pi)
@@ -341,17 +345,48 @@ class Rusher:
                  and any(hex_distance(c["r"], c["c"], s[0], s[1]) <= 4 for s in spots)]
         build.sort(key=lambda c: hex_distance(c["r"], c["c"], tgt["r"], tgt["c"]))
         best = None
-        for extra in range(0, min(len(build), len(spots)) + 1):
-            f = t.fork()
-            try:
-                r = self.run_strike(f, tgt, extra, build)
-            finally:
-                f.close()
-            if r and (best is None or r > best[0]):
-                best = (r, extra)
+        for prep in self.strike_preps():
+            for extra in range(0, min(len(build), len(spots)) + 1):
+                f = t.fork()
+                try:
+                    if self.prepare(f, prep):
+                        continue
+                    r = self.run_strike(f, tgt, extra, build)
+                finally:
+                    f.close()
+                if r and (best is None or r > best[0]):
+                    best = (r, extra, prep)
+            if best is not None:
+                break                   # the cheapest preparation that makes a hit
         if best is None:
             return False
+        self.prepare(t, best[2])
         return self.run_strike(t, tgt, best[1], build) is not None
+
+    def strike_preps(self):
+        """Extra coins for a strike, cheapest first: (alchemie, sacrifice level)."""
+        t = self.t
+        alch = [False]
+        if self.strike_alch and not t.has("alchemie") and any(
+                x["k"] == "alchemie" for x in (t.q("researchable", "$S", t.pi) or [])):
+            alch.append(True)
+        sac = (0, 1, 2) if self.strike_sac and t.q("slaveryUsable", {"$player": t.pi}) else (0,)
+        return [(a, s) for s in sac for a in alch]
+
+    def prepare(self, t, prep) -> bool:
+        """Run a preparation on t; True if it failed."""
+        alch, sac = prep
+        if alch and t.act("research", tech="alchemie"):
+            return True
+        if sac:
+            self.sacrifice_for_strike(t, sac)
+        return False
+
+    def sacrifice_for_strike(self, t, level):
+        """Coins for a strike from slavery: level 1 all cities but the capital, 2 the capital too."""
+        for city in sorted(t.cities(), key=lambda c: -c["pop"]):
+            if city["pop"] >= 2 and (level >= 2 or not city.get("cap")):
+                t.act("sacrifice", cityId=city["id"])
 
     def run_strike(self, t, tgt, extra, build):
         saved, self.t = self.t, t          # the helpers ask self.t – here the fork
@@ -463,7 +498,7 @@ class Rusher:
                 t.act("moveArmy", armyId=a["id"], r=s[0], c=s[1])
 
     # ------------------------------------------------------------------ defense
-    def enemy_attack(self, city, slots: int, new_armies: bool = True) -> int:
+    def enemy_attack(self, city, slots: int, new_armies: bool = True, exclude=()) -> int:
         """The strongest attack one enemy could bring against `city` at the end of its next
         turn: its armies that can get there plus new ones from its nearby cities, with its
         power after the decay plus its whole coin budget (income and slavery) - split between
@@ -480,7 +515,8 @@ class Rusher:
             if ep["techs"].get("eisenbahn") or (t.S.get("roads") and ep["techs"].get("rad")):
                 move += 2
             near = move + erng
-            k0 = sum(1 for a in t.armies(e) if hex_distance(a["r"], a["c"], city["r"], city["c"]) <= near)
+            k0 = sum(1 for a in t.armies(e) if hex_distance(a["r"], a["c"], city["r"], city["c"]) <= near
+                     and a["id"] not in exclude)
             builders = sum(1 for c in t.cities(e) if hex_distance(c["r"], c["c"], city["r"], city["c"]) <= near)
             if not new_armies:
                 builders = 0
@@ -528,8 +564,27 @@ class Rusher:
             if not hit and not city.get("cap"):
                 continue
             if hit:
-                plan = self.defense_plan(city, True)
+                preps = [(False, 0)]
+                if self.defend_prep and city.get("cap"):
+                    preps = [p for p in self.strike_preps() if p[1] < 2]
+                plan = None
+                self.last_margin = None
+                for prep in preps:
+                    plan = self.defense_plan(city, True, prep)
+                    if plan and plan[2]:
+                        break
+                if self.counter_flank and city.get("cap") and not (plan and plan[2]):
+                    fl = None
+                    for prep in preps:
+                        fl = self.flank_plan(city, prep)
+                        if fl and fl[0]:
+                            break
+                    if fl and (fl[0] or self.last_margin is None or fl[2] > self.last_margin):
+                        self.prepare(t, fl[3])
+                        self.run_flank(t, city, commit=True)
+                        continue
                 if plan and plan[0] > 0 and (city.get("cap") or (plan[2] and plan[0] <= 4 * city["pop"] + 6)):
+                    self.prepare(t, plan[3])
                     self.run_defense(t, city, plan[1], commit=True, full=True)
             elif self.soft_share > 0:
                 # not hit yet: hold against the armies already near, if that is cheap
@@ -598,13 +653,15 @@ class Rusher:
             t.act("moveArmy", armyId=a["id"], r=s[0], c=s[1])
             self.guard_ids.add(a["id"])
 
-    def defense_plan(self, city, full: bool):
+    def defense_plan(self, city, full: bool, prep=(False, 0)):
         """(cost, helpers, holds): the cheapest plan that holds, else the one with the best
         margin for all the coins there are."""
         best = None
         for h in range(0, 4):
             f = self.t.fork()
             try:
+                if self.prepare(f, prep):
+                    return None
                 r = self.run_defense(f, city, h, full=full)
             finally:
                 f.close()
@@ -613,7 +670,8 @@ class Rusher:
             holds, cost, margin = r
             key = (holds, -cost if holds else margin)
             if best is None or key > best[0]:
-                best = (key, cost, h, holds)
+                best = (key, cost, h, holds, prep)
+                self.last_margin = margin
         return None if best is None else best[1:]
 
     def run_defense(self, t, city, helpers, commit=False, full=True):
@@ -683,6 +741,124 @@ class Rusher:
             return None
         margin = t.q("defenseValue", "$S", {"$city": cid}, pow0 + need) - threat
         return holds, coins0 - coins + need * price, margin
+
+    # ------------------------------------------------------------------ counter-flank
+    def flank_plan(self, city, prep):
+        """After a hit on `city`: destroy the attackers by flanking (two own armies on opposite
+        sides of each, more power than their owner) and hold against what is left. Tried on a
+        fork; returns (holds, cost, margin, prep) or None."""
+        f = self.t.fork()
+        try:
+            if self.prepare(f, prep):
+                return None
+            r = self.run_flank(f, city, commit=False)
+            return None if r is None else r + (prep,)
+        finally:
+            f.close()
+
+    def run_flank(self, t, city, commit):
+        saved, self.t = self.t, t
+        try:
+            return self._run_flank(t, city, commit)
+        finally:
+            self.t = saved
+
+    def _run_flank(self, t, city, commit):
+        coins0 = t.q("available", "$S", t.pi, "coins")
+        cid = city["id"]
+        targets = []
+        for e in t.enemies():
+            erng = t.q("attackRange", "$S", e) or 1
+            for a in t.armies(e):
+                if hex_distance(a["r"], a["c"], city["r"], city["c"]) <= erng:
+                    targets.append(a)
+        if not targets:
+            return None
+        used = set()
+        flanked = []
+        for tg in sorted(targets, key=lambda a: hex_distance(a["r"], a["c"], city["r"], city["c"])):
+            if t.q("canFlank", "$S", t.pi, {"$army": tg["id"]}):
+                flanked.append(tg)
+                continue
+            nb = [n for n in neighbors(tg["r"], tg["c"]) if t.grid.is_land(*n) and not t.city_at(*n)
+                  and (not t.army_at(*n) or t.army_at(*n)["owner"] == t.pi)]
+            pairs = [(a, b) for i, a in enumerate(nb) for b in nb[i + 1:]]
+            ok = t.call([("hexOpposite", tg["r"], tg["c"], a[0], a[1], b[0], b[1]) for a, b in pairs]) if pairs else []
+            pairs = [p for p, o in zip(pairs, ok) if o]
+            # fewest new positions first
+            pairs.sort(key=lambda p: sum(1 for s in p if not t.army_at(*s)))
+            for pair in pairs:
+                g = t.fork()
+                try:
+                    good = self.fill_spots(g, pair, set(used))
+                finally:
+                    g.close()
+                if good:
+                    self.fill_spots(t, pair, used)
+                    flanked.append(tg)
+                    break
+        if not flanked:
+            return None
+        if commit:
+            for a in t.armies():
+                if hex_distance(a["r"], a["c"], city["r"], city["c"]) <= 3 and not t.city_at(a["r"], a["c"]):
+                    self.guard_ids.add(a["id"])
+        # power above every flanked owner's, then enough for the defense against the rest
+        price = t.q("powerPrice", "$S", t.pi)
+        pow0 = t.q("powerOf", "$S", t.pi)
+        need = max(0, max(t.q("powerOf", "$S", a["owner"]) for a in flanked) + 1 - pow0)
+        coins = t.q("available", "$S", t.pi, "coins")
+        if need * price > coins:
+            return None
+        gone = {a["id"] for a in flanked}
+        rng = t.q("attackRange", "$S", t.pi)
+        ring = self.ring(t.city(cid), rng)
+        mine = sum(1 for s in ring if t.army_at(*s) and t.army_at(*s)["owner"] == t.pi)
+        threat = self.enemy_attack(t.city(cid), len(ring) - mine, True, exclude=gone)
+        while t.q("defenseValue", "$S", {"$city": cid}, pow0 + need) <= threat:
+            if (need + 1) * price > coins:
+                break
+            need += 1
+        if need and t.act("buyPower", n=need):
+            return None
+        for _ in range(3):
+            if t.act("growCity", cityId=cid, mode="free") and t.act("growCity", cityId=cid, mode="paid"):
+                break
+        margin = t.q("defenseValue", "$S", {"$city": cid}) - threat
+        return margin > 0, coins0 - t.q("available", "$S", t.pi, "coins"), margin
+
+    def fill_spots(self, t, spots, used) -> bool:
+        """Put own armies on `spots` (existing ones that reach, else new ones from cities)."""
+        saved, self.t = self.t, t
+        try:
+            for s in spots:
+                a = t.army_at(*s)
+                if a and a["owner"] == t.pi:
+                    used.add(a["id"])
+                    continue
+                best = None
+                for a in t.armies():
+                    if a["id"] in used or a["mp"] <= 0 or a.get("halted"):
+                        continue
+                    reach = self.reach(a)
+                    if s in reach and (best is None or reach[s] < best[0]):
+                        best = (reach[s], a["id"])
+                if best is None:
+                    for c in sorted(t.cities(), key=lambda c: hex_distance(c["r"], c["c"], *s)):
+                        if hex_distance(c["r"], c["c"], *s) > 3 or t.army_at(c["r"], c["c"]):
+                            continue
+                        if t.act("buildArmy", cityId=c["id"]):
+                            return False
+                        a = t.army_at(c["r"], c["c"])
+                        if s in self.reach(a):
+                            best = (0, a["id"])
+                        break
+                if best is None or t.act("moveArmy", armyId=best[1], r=s[0], c=s[1]):
+                    return False
+                used.add(best[1])
+            return True
+        finally:
+            self.t = saved
 
     # ------------------------------------------------------------------ end of turn
     def leave_cities(self):
