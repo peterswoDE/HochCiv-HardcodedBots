@@ -94,7 +94,8 @@ class EconPlanner:
                  grow_est: bool = True, grow_margin: int = 1, threat_exp: float = 10,
                  late_bonus: bool = True, rails: bool = True,
                  w_city: float = W_CITY, chunk_k: float = 2.5, chunk_r: float = 0.45,
-                 method_first: bool = True):
+                 method_first: bool = True, sing_path: bool = True,
+                 race_w: float = 4.0, race_turns: float = 4.0):
         self.alch_bonus = alch_bonus
         self.chunk = chunk
         self.threat_exp = threat_exp
@@ -102,6 +103,8 @@ class EconPlanner:
         self._pop = 0
         self.w_city, self.chunk_k, self.chunk_r = w_city, chunk_k, chunk_r
         self.method_first = method_first
+        self.sing_path = sing_path
+        self.race_w, self.race_turns = race_w, race_turns
         self.hold = set(hold)      # techs left to the strike (researched in the turn they hit)
         # military bonus only from round mil_from on (scaled): the rush techs crowd out the economy
         self.mil_scale = mil_scale if t.round >= mil_from else 0.0
@@ -123,6 +126,37 @@ class EconPlanner:
             grow = (enemy_growth(t, e) + grow_margin if grow_est else 2 + len(t.cities(e))) if self.moves_after(e) else 0
             if vo and vo.get("frac"):
                 self.threats.append((pop + grow, grow, vo["frac"]))
+        self.race = False
+        if self.race_w and len(self.pool) and t.round >= 4:
+            etas = [self.sing_eta(pi) for pi in [t.pi] + t.enemies()]
+            self.race = min(etas) <= self.race_turns
+
+    def sing_need(self, p: dict) -> float:
+        """Science still needed for the singularity: the cheapest tech of each missing age in
+        every field (available ones first), then the singularity itself."""
+        meth = bool(p["techs"].get("wiss_methode"))
+        disc = (2, 3, 4, 5, 10)
+        if p["techs"].get("singularitaet"):
+            return 0
+        need = max(0, 120 - (disc[4] if meth else 0))
+        for f in range(4):
+            a = max([x["age"] for k, x in self.pool.items() if x.get("f") == f and p["techs"].get(k)], default=-1)
+            for age in range(a + 1, 4):
+                lst = [x for x in self.pool.values() if x.get("f") == f and x.get("age") == age]
+                if not lst:
+                    continue
+                av = [x for x in lst if p.get("avail", {}).get(x["k"]) and not p["techs"].get(x["k"])]
+                need += min(max(0, x["c"] - (disc[age] if meth else 0)) for x in (av or lst))
+        return need
+
+    def sing_eta(self, pi: int) -> float:
+        t = self.t
+        p = t.S["players"][pi]
+        need = self.sing_need(p)
+        inc = t.q("income", "$S", pi)
+        per = max(1, inc["sci"] + max(0, inc["coins"]) / 2)
+        have = t.q("available", "$S", pi, "sci")
+        return max(0, need - have) / per
 
     def moves_after(self, e: int) -> bool:
         """Does enemy e still move this round after me?"""
@@ -136,7 +170,8 @@ class EconPlanner:
         pi = self.t.pi
         return [("baseIncome", "$S", pi), ("popOf", "$S", pi), ("worldPop", "$S"),
                 ("victoryOption", "$S", {"$player": pi}), ("$player", pi),
-                ("defenseValue", "$S", {"$city": self.cap_id}) if self.cap_id is not None else ("popOf", "$S", pi)]
+                ("defenseValue", "$S", {"$city": self.cap_id}) if self.cap_id is not None else ("popOf", "$S", pi),
+                ("available", "$S", pi, "sci")]
 
     def tech_bonus(self, k: str, ncities: int, inc: dict) -> float:
         H = self.H
@@ -174,7 +209,7 @@ class EconPlanner:
         return v
 
     def value(self, res) -> tuple[float, dict]:
-        inc, pop, world, vo, p, dcap = res
+        inc, pop, world, vo, p, dcap, sci_av = res
         self._pop = pop
         techs = [k for k, v in (p or {}).get("techs", {}).items() if v]
         ncities = self._ncities
@@ -196,6 +231,9 @@ class EconPlanner:
         for epop, grow, frac in self.threats:
             q = min(1.3, epop / max(1, world + grow) / frac)
             v -= self.threat_w * q ** self.threat_exp
+        if self.race and p and sci_av is not None:
+            # singularity race: science kept towards what the singularity still costs
+            v += self.race_w * min(0, sci_av - self.sing_need(p))
         return v, p["res"]
 
     # ------------------------------------------------------------------ candidates
@@ -208,6 +246,10 @@ class EconPlanner:
         for x, c in zip(open_, costs):
             if c is not None and c <= sci and x["k"] not in self.hold:
                 out.append(("tech:" + x["k"], [("research", {"tech": x["k"]})]))
+        if self.sing_path:
+            path = self.singularity_path()
+            if path:
+                out.append(("sing:path", [("research", {"tech": k}) for k in path]))
         for kind, fn in (("freeTech", "freeTechOptions"), ("backPick", "backPickOptions"),
                          ("freePick", "freePickOptions")):
             for x in t.q(fn, "$S", t.pi) or []:
@@ -227,6 +269,46 @@ class EconPlanner:
             for tag, tiles in self.road_plans(2)[:4]:
                 out.append(("rail" + tag[4:], [("buildRoad", {"r": r, "c": c, "target": 2}) for r, c in tiles]))
         return out
+
+    def singularity_path(self, max_len: int = 10):
+        """Research chain that reaches the singularity in this turn, built greedily on a fork:
+        the scientific method first, then the cheapest tech that raises a field still short of
+        the modern age, then the singularity. None if it is out of reach."""
+        t = self.t
+        if t.has("singularitaet"):
+            return None
+        best = [-1] * 4
+        for k, on in t.me["techs"].items():
+            x = self.pool.get(k)
+            if on and x and 0 <= x["f"] < 4:
+                best[x["f"]] = max(best[x["f"]], x["age"])
+        if min(best) < 2 or sum(3 - a for a in best) > 3:
+            return None
+        f = t.fork()
+        path = []
+        try:
+            for _ in range(max_len):
+                sci = f.q("available", "$S", f.pi, "sci")
+                open_ = f.q("researchable", "$S", f.pi) or []
+                costs = f.call([("techCost", "$S", f.pi, x) for x in open_])
+                opts = [(c, x["k"]) for x, c in zip(open_, costs) if c is not None and c <= sci]
+                done = [o for o in opts if o[1] == "singularitaet"]
+                if done:
+                    path.append("singularitaet")
+                    return path
+                meth = [o for o in opts if o[1] == "wiss_methode"]
+                step = [o for o in opts if o[1] in self.pool and 0 <= self.pool[o[1]]["f"] < 4
+                        and self.pool[o[1]]["age"] >= 3 and best[self.pool[o[1]]["f"]] < 3]
+                pick = min(meth or step, default=None)
+                if pick is None or f.act("research", tech=pick[1]):
+                    return None
+                path.append(pick[1])
+                x = self.pool.get(pick[1])
+                if x and 0 <= x["f"] < 4:
+                    best[x["f"]] = max(best[x["f"]], x["age"])
+            return None
+        finally:
+            f.close()
 
     def sites(self):
         t = self.t
@@ -402,7 +484,7 @@ class ClaimPlanner(EconPlanner):
         self.mine = any(c["pi"] == t.pi for c in (t.S.get("claims") or []))
 
     def value(self, res):
-        inc, pop, world, vo, p, dcap = res
+        inc, pop, world, vo, p, dcap = res[:6]
         techs = sum(1 for v in (p or {}).get("techs", {}).values() if v)
         claim = self.mine or bool(p["techs"].get("singularitaet"))
         if not claim and vo and world and len(self.t.S["cities"]) > 1 and vo.get("den"):
