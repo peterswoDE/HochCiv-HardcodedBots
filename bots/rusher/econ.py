@@ -12,6 +12,7 @@ answers what the income, population etc. of a copy are.
 """
 from __future__ import annotations
 
+import math
 import heapq
 
 from hcbots.hexgrid import hex_distance, key, neighbors, within
@@ -95,7 +96,8 @@ class EconPlanner:
                  late_bonus: bool = True, rails: bool = True,
                  w_city: float = W_CITY, chunk_k: float = 2.5, chunk_r: float = 0.45,
                  method_first: bool = True, sing_path: bool = True,
-                 race_w: float = 4.0, race_turns: float = 4.0):
+                 race_w: float = 4.0, race_turns: float = 4.0,
+                 eta_h: bool = False, race_mode: str = "hold"):
         self.alch_bonus = alch_bonus
         self.chunk = chunk
         self.threat_exp = threat_exp
@@ -104,7 +106,7 @@ class EconPlanner:
         self.w_city, self.chunk_k, self.chunk_r = w_city, chunk_k, chunk_r
         self.method_first = method_first
         self.sing_path = sing_path
-        self.race_w, self.race_turns = race_w, race_turns
+        self.race_w, self.race_turns, self.race_mode = race_w, race_turns, race_mode
         self.hold = set(hold)      # techs left to the strike (researched in the turn they hit)
         # military bonus only from round mil_from on (scaled): the rush techs crowd out the economy
         self.mil_scale = mil_scale if t.round >= mil_from else 0.0
@@ -127,9 +129,14 @@ class EconPlanner:
             if vo and vo.get("frac"):
                 self.threats.append((pop + grow, grow, vo["frac"]))
         self.race = False
-        if self.race_w and len(self.pool) and t.round >= 4:
+        if (self.race_w or eta_h) and len(self.pool) and t.round >= 3:
             etas = [self.sing_eta(pi) for pi in [t.pi] + t.enemies()]
-            self.race = min(etas) <= self.race_turns
+            self.race = bool(self.race_w) and t.round >= 4 and min(etas) <= self.race_turns
+            if eta_h:
+                # like the KI: the game probably ends one round after the fastest singularity,
+                # so income counts for fewer rounds and points (pop, techs) for more
+                r = max(1, min(8, END_ROUND - t.round + 1, math.ceil(min(etas)) + 1))
+                self.H = sum(GAMMA ** i for i in range(r))
 
     def sing_need(self, p: dict) -> float:
         """Science still needed for the singularity: the cheapest tech of each missing age in
@@ -233,7 +240,11 @@ class EconPlanner:
             v -= self.threat_w * q ** self.threat_exp
         if self.race and p and sci_av is not None:
             # singularity race: science kept towards what the singularity still costs
-            v += self.race_w * min(0, sci_av - self.sing_need(p))
+            if self.race_mode == "progress":
+                # resources do not carry over: reward what is left of the way, not what is kept
+                v -= self.race_w * self.sing_need(p)
+            else:
+                v += self.race_w * min(0, sci_av - self.sing_need(p))
         return v, p["res"]
 
     # ------------------------------------------------------------------ candidates

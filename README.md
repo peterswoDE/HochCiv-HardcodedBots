@@ -130,7 +130,9 @@ die Wissenschaftliche Methode vor jeder anderen bezahlten Technik (`method_first
 
 Singularitätsrennen: Liegt ein Reich (er selbst oder ein Gegner) höchstens `race_turns` Runden
 vor der Singularität, zählt jede Wissenschaft, die vom restlichen Weg dorthin fehlt, mit
-`race_w` gegen den Plan – der Bot spart, statt in Wachstum zu stecken. Reicht es in einem Zug,
+`race_w` gegen den Plan – Ressourcen verfallen am Rundenende, also zieht der Bot Techniken auf
+dem Weg zur Singularität dem Wachstum vor (`race_mode=hold`; `progress` bewertet nur den
+Fortschritt und war schwächer). Reicht es in einem Zug,
 erforscht er die ganze Kette auf einmal (`sing_path`).
 
 Optionen (`--opt`): `stage_armies`, `from_round`, `defend`, `soft_share` (vorbeugende
@@ -139,13 +141,15 @@ Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Haupt
 `full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, `answer_claims`, und für die Wirtschaft
 (`econ`) `threat_w`, `threat_exp`, `grow_est`, `grow_margin`, `grow_step`, `coin_price`, `def_w`,
 `mil_scale`, `mil_from`, `chunk`, `chunk_k`, `chunk_r`, `w_city`, `hold`, `late_bonus`, `rails`,
-`method_first`, `sing_path`, `race_w`, `race_turns`.
+`method_first`, `sing_path`, `race_w`, `race_turns`, `race_mode`, `eta_h` (Horizont wie die KI
+nach der schnellsten Singularität kürzen; schwächer, daher aus).
 
-Stand gegen KI schwer (192 Seeds je Duell, 96 je Mehrspielermodus; fair = 1/Spielerzahl):
+Stand gegen KI schwer (192 Seeds je Duell, custom2 auf 384 frischen, nicht zum Tunen benutzten
+Seeds; 96 je Mehrspielermodus; fair = 1/Spielerzahl):
 
 | Modus | tile2 | custom2 | tile3 | tile4 | orig4 | custom3 | custom4 |
 |---|---|---|---|---|---|---|---|
-| Siege | 62 % | 50 % | 34 % | 32 % | 32 % | 41 % | 26 % |
+| Siege | 62 % | 43 % | 34 % | 32 % | 32 % | 41 % | 26 % |
 | fair | 50 % | 50 % | 33 % | 25 % | 25 % | 33 % | 25 % |
 
 Auf custom2 gewinnt die KI gegen sich selbst als Sitz 1 rund 62 %, als Sitz 0 rund 38 %; manche
