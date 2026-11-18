@@ -92,12 +92,16 @@ class EconPlanner:
                  grow_step: float = GROW_STEP, coin_price: float = PRICE["coins"], def_w: float = 0.0,
                  alch_bonus: float = 0.0, chunk: bool = True, hold=(), mil_scale: float = 1.0, mil_from: int = 1,
                  grow_est: bool = True, grow_margin: int = 1, threat_exp: float = 10,
-                 late_bonus: bool = True, rails: bool = True):
+                 late_bonus: bool = True, rails: bool = True,
+                 w_city: float = W_CITY, chunk_k: float = 2.5, chunk_r: float = 0.45,
+                 method_first: bool = True):
         self.alch_bonus = alch_bonus
         self.chunk = chunk
         self.threat_exp = threat_exp
         self.late_bonus, self.rails = late_bonus, rails
         self._pop = 0
+        self.w_city, self.chunk_k, self.chunk_r = w_city, chunk_k, chunk_r
+        self.method_first = method_first
         self.hold = set(hold)      # techs left to the strike (researched in the turn they hit)
         # military bonus only from round mil_from on (scaled): the rush techs crowd out the economy
         self.mil_scale = mil_scale if t.round >= mil_from else 0.0
@@ -175,7 +179,7 @@ class EconPlanner:
         techs = [k for k, v in (p or {}).get("techs", {}).items() if v]
         ncities = self._ncities
         v = self.H * sum(W[r] * inc[r] for r in W)
-        v += W_POP * pop + W_CITY * ncities + W_TECH * len(techs)
+        v += W_POP * pop + self.w_city * ncities + W_TECH * len(techs)
         v += sum(self.tech_bonus(k, ncities, inc) for k in techs)
         if self.def_w and self.cap_id is not None:
             v += self.def_w * (dcap or 0)
@@ -340,6 +344,7 @@ class EconPlanner:
             base, before = self.value(res[0])
             best = None
             top = None
+            method = None
             for (tag, acts), r in zip(cands, res[1:]):
                 if r is None:
                     continue
@@ -355,6 +360,8 @@ class EconPlanner:
                 spent = sum(self.price[k] * (before[k] - after[k]) * (1 if k != "sci" or research else SCI_RESERVE)
                             for k in self.price)
                 ratio = dv / (max(0, spent) + 2)
+                if tag.endswith(":wiss_methode") and (method is None or ratio > method[0]):
+                    method = (ratio, dv, tag, acts)
                 if best is None or ratio > best[0]:
                     best = (ratio, dv, tag, acts)
                 if top is None or dv > top[1]:
@@ -363,8 +370,12 @@ class EconPlanner:
                 break
             # big chunks: an action worth much more in total wins if its ratio is not much
             # worse (else small things eat the food a new city needs)
-            if self.chunk and top is not best and top[1] > 2.5 * best[1] and top[0] > 0.45 * best[0]:
+            if self.chunk and top is not best and top[1] > self.chunk_k * best[1] and top[0] > self.chunk_r * best[0]:
                 best = top
+            # the scientific method makes every tech paid after it cheaper: take it first
+            # whenever this step pays a tech and the method is worth something on its own
+            if self.method_first and method and best[2].startswith("tech:") and best is not method:
+                best = method
             _, dv, tag, acts = best
             err = None
             for a, p in acts:
