@@ -150,12 +150,11 @@ nehmen), `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank
 `method_first`, `sing_path`, `lookahead`, `lookahead_k` (mehr Kandidaten durchspielen), `race_w`, `race_turns`, `race_mode`, `eta_h` (Horizont wie die KI
 nach der schnellsten Singularität kürzen; schwächer, daher aus).
 
-Stand gegen KI schwer mit v110 (Duelle auf 192 Seeds ab 1001, Mehrspielermodi auf 96 Seeds;
-fair = 1/Spielerzahl; in Klammern v108 vor der Sklaverei-Änderung):
+Stand gegen KI schwer mit v110 (192 Seeds ab 1001 je Modus; fair = 1/Spielerzahl):
 
 | Modus | tile2 | custom2 | tile3 | tile4 | orig4 | custom3 | custom4 |
 |---|---|---|---|---|---|---|---|
-| Siege | 61 % (65) | 52 % (49) | 42 % (46) | 33 % (43) | 34 % (41) | 41 % (47) | 41 % (44) |
+| Siege | 61 % | 52 % | 41 % | 40 % | 34 % | 30 % | 29 % |
 | fair | 50 % | 50 % | 33 % | 25 % | 25 % | 33 % | 25 % |
 
 Auf custom2 gewinnt die KI gegen sich selbst als Sitz 1 rund 62 %, als Sitz 0 rund 38 %; manche
