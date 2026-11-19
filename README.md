@@ -28,6 +28,9 @@ template/             der Rahmen, für alle Bots gleich
   example_bot.py      der kleinste Bot – Vorlage zum Kopieren
 bots/<name>/bot.py    je Bot ein Ordner; die Klasse hat name = "<name>"
 evaluate.py           Auswertung gegen die KI über viele Seeds und alle Sitze
+online/client.py      Online-Client: spielt mit einem Bot-Konto auf hochciv.de / staging
+online/panel.py       Control-Board (lokale Webseite) zum Steuern des Online-Clients
+tests/online_sim.py   die Online-Zugschleife gegen einen simulierten Server testen
 ```
 
 ## Ein Bot
@@ -172,3 +175,49 @@ python -m unittest discover tests
 ```
 
 Zugangsdaten (`hcbot_…`-Tokens) und `*.env`-Dateien gehören nie ins Repository.
+
+## Online spielen (Control-Board)
+
+Der Online-Client spielt mit einem **Bot-Konto** als Spieler-Bot (🤖) auf einem HochCiv-Server –
+Live-Lobbys, Rundenspiele und Matchmaking. Gesteuert wird er über ein Control-Board im Browser.
+
+1. Bot-Konto anlegen: auf der Website Kontoseite → Reiter **Meine Bots** → Name → **Bot erstellen**
+   (braucht die Rolle *Bot-Ersteller*). Das Token `hcbot_…` wird nur einmal gezeigt.
+2. `online.env` im Repo-Ordner anlegen (wird von `.gitignore` ignoriert, nie committen):
+   ```
+   HOCHCIV_URL=https://staging.hochciv.de
+   HOCHCIV_TOKEN=hcbot_...
+   ```
+   Alternativ als Umgebungsvariablen `HOCHCIV_URL` / `HOCHCIV_TOKEN`.
+3. Starten:
+   ```
+   python -m online.client --open                      # Rusher mit Standardoptionen
+   python -m online.client --bot rusher --opt garrison_max=1 --port 8766
+   ```
+   Das Control-Board läuft auf `http://127.0.0.1:8766/` (nur lokal, jede API-Anfrage braucht das
+   Token, das in die Seite geschrieben wird).
+
+Im Control-Board:
+
+| Bereich | Was es tut |
+|---|---|
+| **Join** | öffentlichen Lobbys / Rundenspielen beitreten, die zu den Filtern passen (Karten, 2–4 Reiche, KI-Sitze, gewertet, Timer). Standard: keine Wunder, keine Ereignisse – dafür spielt der Bot nicht. |
+| **Host** | eigene Lobbys / Rundenspiele nach Vorlagen offen halten (Karte, Reiche, KI-Stufe, Timer, Anzahl) |
+| **Matchmaking** | gewertete Warteschlange (nur mit Spielern, die Bots zulassen) |
+| **Spielliste** | einzelne Lobbys / Rundenspiele gezielt beitreten oder verlassen |
+| **Log** | jeder Zug: Runde, gesendete Aktionen, Dauer, lokal abgelehnte Züge |
+
+Die Einstellungen werden in `runs/online-settings.json` gespeichert. Marathon-Spiele (Fähigkeiten-
+Draft) spielt der Bot nicht. Startplättchen legt er selbst (`Rusher.place`).
+
+**Wie ein Zug online läuft:** Der Server schickt den vollen Zustand, aber ohne seine Würfel
+(`S.seed`). Der Client lädt ihn in die lokale Engine und lässt den Bot wie offline entscheiden.
+Jede Aktion prüft zuerst die lokale Engine; erst dann geht sie als `action` an den Server, und
+der neue Serverzustand ersetzt sofort den lokalen (`OnlineTurn` in `online/client.py`). So
+entscheidet der Bot immer auf dem echten Stand, auch wenn Kampf- oder Forschungswürfe anders
+fallen als lokal. Probieren (`fork`, `trials`) bleibt lokal und kostet keine Server-Aufrufe.
+`python tests/online_sim.py --mode tile2 --seeds 20` testet genau diese Schleife gegen einen
+simulierten Server (zweiter Engine-Worker mit eigenen Würfeln).
+
+Spielt der Server eine neue Engine-Version, nimmt der Client die passende lokale Kopie aus
+`../multiplayer-server/HochCiv-<version>/js` (laufende Rundenspiele behalten ihre Version).
