@@ -192,9 +192,9 @@ Live-Lobbys, Rundenspiele und Matchmaking. Gesteuert wird er über ein Control-B
 3. Starten:
    ```
    python -m online.client --open                      # Rusher mit Standardoptionen
-   python -m online.client --bot rusher --opt garrison_max=1 --port 8766
+   python -m online.client --bot rusher --opt garrison_max=1 --port 8780
    ```
-   Das Control-Board läuft auf `http://127.0.0.1:8766/` (nur lokal, jede API-Anfrage braucht das
+   Das Control-Board läuft auf `http://127.0.0.1:8780/` (nur lokal, jede API-Anfrage braucht das
    Token, das in die Seite geschrieben wird).
 
 Im Control-Board:

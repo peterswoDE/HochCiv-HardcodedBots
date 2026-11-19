@@ -3,7 +3,7 @@ fest programmierten Bot (Standard: rusher), gesteuert über ein lokales Control-
 
     pip install -r requirements.txt
     python -m online.client --config online.env [--bot rusher] [--opt key=value ...] [--open]
-    -> Control-Board auf http://127.0.0.1:8766
+    -> Control-Board auf http://127.0.0.1:8780
 
 online.env (git-ignoriert, KEY=VALUE):
     HOCHCIV_URL=https://staging.hochciv.de
@@ -1432,7 +1432,7 @@ def main():
     ap.add_argument("--bot", default="rusher", help="bots/<name>")
     ap.add_argument("--opt", nargs="*", default=[], help="bot options key=value (constructor kwargs)")
     ap.add_argument("--settings", default="runs/online-settings.json", help="where the panel settings are saved")
-    ap.add_argument("--port", type=int, default=8766, help="control board on http://127.0.0.1:PORT")
+    ap.add_argument("--port", type=int, default=8780, help="control board on http://127.0.0.1:PORT")
     ap.add_argument("--no-panel", action="store_true", help="run with the saved settings, no control board")
     ap.add_argument("--open", action="store_true", help="open the control board in the browser")
     args = ap.parse_args()

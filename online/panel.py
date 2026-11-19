@@ -25,7 +25,7 @@ log = logging.getLogger("hcbots")
 PAGE = Path(__file__).with_name("panel.html")
 
 
-def serve(mgr, port=8765, open_browser=False):
+def serve(mgr, port=8780, open_browser=False):
     token = secrets.token_urlsafe(24)
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
 
