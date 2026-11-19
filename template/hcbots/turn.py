@@ -33,6 +33,13 @@ class Turn:
     def round(self) -> int:
         return self.S["round"]
 
+    def const(self, name: str):
+        """A constant of the engine (e.g. SLAVERY_COINS), cached per bridge."""
+        cache = self.b.__dict__.setdefault("_consts", {})
+        if name not in cache:
+            cache[name] = self.b.call("consts", names=[name])["consts"][name]
+        return cache[name]
+
     def has(self, tech: str, pi: int | None = None) -> bool:
         p = self.S["players"][self.pi if pi is None else pi]
         return bool(p["techs"].get(tech))

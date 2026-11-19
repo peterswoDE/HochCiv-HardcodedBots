@@ -7,7 +7,7 @@ Turn plan:
   1. free picks, research (military priority list; leftover science on cheap techs, never a
      modern-age tech while slavery pays)
   2. found cities on the best sites food allows
-  3. with slavery: grow every city, then sacrifice one population in every city (+7 coins)
+  3. with slavery: grow every city, then sacrifice one population in every city (SLAVERY_COINS: 4 in v110)
   4. military: strike the target capital if a winning siege is affordable this turn, else stage
      armies just outside its range; guard the own capital when an enemy could take it
   5. armies never stay in cities; all remaining coins go into power (resources don't carry
@@ -148,6 +148,10 @@ class Rusher:
             t.act("sacrifice", cityId=city["id"])
 
     # ------------------------------------------------------------------ research
+    def slav_scale(self) -> float:
+        s = self.econ.get("slav_scale")
+        return s if s is not None else (self.t.const("SLAVERY_COINS") or 7) / 7
+
     def slavery_pays(self) -> bool:
         return self.t.has("sklaverei") or "sklaverei" in self.t.me["avail"]
 
@@ -172,7 +176,7 @@ class Rusher:
             finally:
                 f.close()
             gain = sum(INCOME_W[r] * (inc[r] - base[r]) for r in INCOME_W)
-            v = HORIZON * gain + TECH_BONUS.get(k, 0)
+            v = HORIZON * gain + TECH_BONUS.get(k, 0) * (self.slav_scale() if k == "sklaverei" else 1)
             if x["age"] < 3 and (x["f"], x["age"]) not in owned_ages:
                 v += 3                      # the first tech of an age rolls the next one
             if x["age"] >= 3 and self.slavery_pays():
@@ -621,7 +625,7 @@ class Rusher:
         inc = inc or {}
         coins = (ep["res"].get("coins", 0) or 0) + inc.get("coins", 0)
         sci = (ep["res"].get("sci", 0) or 0) + inc.get("sci", 0)
-        sacs = 7 * sum(1 for c in t.cities(e) if c["pop"] >= 2)
+        sacs = (t.const("SLAVERY_COINS") or 7) * sum(1 for c in t.cities(e) if c["pop"] >= 2)
         cost = {}
         if self.full_threat:
             open_ = [x for x in (t.q("researchable", "$S", e) or []) if x["k"] in ("alchemie", "belagerung", "sklaverei")]

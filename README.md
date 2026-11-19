@@ -13,7 +13,7 @@ Wunder, Ereignisse und Marathon spielen keine Rolle.
   `trials`).
 - **Nie** `ki*`-, `bot*`- oder `rush*`-Funktionen der Regelmaschine aufrufen – das wäre die KI
   selbst. `ki.js` darf man lesen, um den Gegner zu verstehen.
-- Die Regelmaschine liegt schreibgeschützt in `../multiplayer-server/HochCiv/js` (v108) und
+- Die Regelmaschine liegt schreibgeschützt in `../multiplayer-server/HochCiv/js` (v110) und
   wird hier **nicht** verändert. Anderer Ort: Umgebungsvariable `HOCHCIV_ENGINE_DIR`.
 
 ## Aufbau
@@ -68,7 +68,7 @@ Modi: `tile2 tile3 tile4` (Plättchenkarte), `orig4` (Originalkarte zu viert),
 Die Streuung ist groß: bei 64 Partien etwa ±6 Prozentpunkte. Vergleiche daher mit 64 Seeds
 oder mehr, eine Partie dauert 20–40 s je Prozess.
 
-## Regeln, die für Bots zählen (v108)
+## Regeln, die für Bots zählen (v110)
 
 - **Eroberung:** zwei Treffer in Folge, je am Ende eines eigenen Zuges (Angriff > Verteidigung).
   Ein Fehlschlag setzt den Zähler zurück. Wer eine Hauptstadt erobert, gewinnt.
@@ -81,6 +81,8 @@ oder mehr, eine Partie dauert 20–40 s je Prozess.
   Zugende.
 - **Armeekosten:** Faktor × (Zahl der Armeen + 1); Faktor 5, mit Demokratie 4, mit
   Nationalismus 2.
+- **Sklaverei:** eine Bevölkerung opfern → `SLAVERY_COINS` Münzen (v110: 4, v84–v109: 7).
+  Konstanten der Regelmaschine liest `t.const(name)`.
 - **Wachstum:** ein bezahlter Schritt je Stadt und Runde (+1 mit Keramik, +1 mit Dampfmaschine);
   kostet Nahrung und Münzen in Höhe der Bevölkerung.
 - **Siege:** Hauptstadt erobern, Wirtschaft (Anteil an der Weltbevölkerung, `victoryOption`),
@@ -139,15 +141,16 @@ erforscht er die ganze Kette auf einmal (`sing_path`).
 
 Optionen (`--opt`): `stage_armies`, `from_round`, `defend`, `soft_share` (vorbeugende
 Verteidigung), `garrison_max`/`garrison_k`/`garrison_share` (Armeen an der Hauptstadt),
-`routine_sac`, `sac_from`/`slavery_from` (erst ab dieser Runde opfern bzw. Sklaverei
+`routine_sac`, `slav_scale` (Wert der Sklaverei; Standard Münzen/7, da auf 7 Münzen
+abgestimmt), `sac_from`/`slavery_from` (erst ab dieser Runde opfern bzw. Sklaverei
 nehmen), `strike_sac`, `strike_alch`, `defend_prep`, `def_techs`, `counter_flank`,
 `full_threat`, `hold_siege`, `hold_stahl`, `sac_safe`, `answer_claims`, und für die Wirtschaft
 (`econ`) `threat_w`, `threat_exp`, `grow_est`, `grow_margin`, `grow_step`, `coin_price`, `def_w`,
 `mil_scale`, `mil_from`, `chunk`, `chunk_k`, `chunk_r`, `w_city`, `hold`, `late_bonus`, `rails`,
-`method_first`, `sing_path`, `lookahead`, `race_w`, `race_turns`, `race_mode`, `eta_h` (Horizont wie die KI
+`method_first`, `sing_path`, `lookahead`, `lookahead_k` (mehr Kandidaten durchspielen), `race_w`, `race_turns`, `race_mode`, `eta_h` (Horizont wie die KI
 nach der schnellsten Singularität kürzen; schwächer, daher aus).
 
-Stand gegen KI schwer (192 Seeds je Duell, custom2 auf 384 frischen, nicht zum Tunen benutzten
+Stand gegen KI schwer (gemessen mit v108 – v110-Messung läuft; 192 Seeds je Duell, custom2 auf 384 frischen, nicht zum Tunen benutzten
 Seeds; 96 je Mehrspielermodus; fair = 1/Spielerzahl):
 
 | Modus | tile2 | custom2 | tile3 | tile4 | orig4 | custom3 | custom4 |

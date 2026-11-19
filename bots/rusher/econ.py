@@ -98,8 +98,12 @@ class EconPlanner:
                  w_city: float = W_CITY, chunk_k: float = 2.5, chunk_r: float = 0.45,
                  method_first: bool = True, sing_path: bool = True,
                  race_w: float = 4.0, race_turns: float = 4.0,
-                 eta_h: bool = False, race_mode: str = "hold", lookahead: bool = True):
+                 eta_h: bool = False, race_mode: str = "hold", lookahead: bool = True,
+                 lookahead_k: int = 1, slav_scale: float | None = None):
         self.lookahead = lookahead
+        self.lookahead_k = lookahead_k
+        # slavery was tuned at 7 coins per population (v108); v110 pays 4
+        self.slav_scale = slav_scale if slav_scale is not None else (t.const("SLAVERY_COINS") or 7) / 7
         self.alch_bonus = alch_bonus
         self.chunk = chunk
         self.threat_exp = threat_exp
@@ -186,7 +190,7 @@ class EconPlanner:
         H = self.H
         if k == "singularitaet":
             return 5000
-        v = MIL_BONUS.get(k, 0) * self.mil_scale
+        v = MIL_BONUS.get(k, 0) * self.mil_scale * (self.slav_scale if k == "sklaverei" else 1)
         # one more paid growth step per city and round: growth is the bottleneck
         if k == "keramik":
             v += self.grow_step * H * min(ncities, 8)
@@ -456,6 +460,7 @@ class EconPlanner:
             best = None
             top = None
             method = None
+            scored = []
             for (tag, acts), r in zip(cands, res[1:]):
                 if r is None:
                     continue
@@ -471,6 +476,7 @@ class EconPlanner:
                 spent = sum(self.price[k] * (before[k] - after[k]) * (1 if k != "sci" or research else SCI_RESERVE)
                             for k in self.price)
                 ratio = dv / (max(0, spent) + 2)
+                scored.append((ratio, dv, tag, acts))
                 if tag.endswith(":wiss_methode") and (method is None or ratio > method[0]):
                     method = (ratio, dv, tag, acts)
                 if best is None or ratio > best[0]:
@@ -489,7 +495,16 @@ class EconPlanner:
                 best = method
             # cheap now vs. big now: play both plans to the end of the turn on a copy and keep
             # the better end (a growth step can eat the food a new city needs)
-            if self.lookahead and top is not best and top[2] != best[2]:
+            if self.lookahead and self.lookahead_k > 1:
+                # several plans: the best few by ratio and by size, each played to the end
+                pool, seen = [best], {best[2]}
+                for x in sorted(scored, key=lambda x: -x[0])[:self.lookahead_k] + sorted(scored, key=lambda x: -x[1])[:2]:
+                    if x[2] not in seen:
+                        seen.add(x[2])
+                        pool.append(x)
+                if len(pool) > 1:
+                    best = max(pool, key=lambda x: self.rollout(x[3]))
+            elif self.lookahead and top is not best and top[2] != best[2]:
                 if self.rollout(top[3]) > self.rollout(best[3]):
                     best = top
             _, dv, tag, acts = best
