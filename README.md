@@ -13,7 +13,7 @@ Wunder, Ereignisse und Marathon spielen keine Rolle.
   `trials`).
 - **Nie** `ki*`-, `bot*`- oder `rush*`-Funktionen der Regelmaschine aufrufen – das wäre die KI
   selbst. `ki.js` darf man lesen, um den Gegner zu verstehen.
-- Die Regelmaschine liegt schreibgeschützt in `../multiplayer-server/HochCiv/js` (v110) und
+- Die Regelmaschine liegt schreibgeschützt in `../multiplayer-server/HochCiv/js` (v112) und
   wird hier **nicht** verändert. Anderer Ort: Umgebungsvariable `HOCHCIV_ENGINE_DIR`.
 
 ## Aufbau
@@ -71,11 +71,12 @@ Modi: `tile2 tile3 tile4` (Plättchenkarte), `orig4` (Originalkarte zu viert),
 Die Streuung ist groß: bei 64 Partien etwa ±6 Prozentpunkte. Vergleiche daher mit 64 Seeds
 oder mehr, eine Partie dauert 20–40 s je Prozess.
 
-## Regeln, die für Bots zählen (v110)
+## Regeln, die für Bots zählen (v112)
 
 - **Eroberung:** zwei Treffer in Folge, je am Ende eines eigenen Zuges (Angriff > Verteidigung).
   Ein Fehlschlag setzt den Zähler zurück. Wer eine Hauptstadt erobert, gewinnt.
-- **Angriff** je Armee in Reichweite: Macht (+3 mit Belagerung, ×2 mit Dynamit).
+- **Angriff** je Armee in Reichweite: Macht (+3 mit Belagerung, ×2 mit Dynamit). Rom (Legion):
+  +50 % Macht je angrenzender eigener Armee, je Armee einzeln (`attackValue` mit Armeeliste).
 - **Verteidigung:** Bevölkerung × (1 + 1 in der Hauptstadt + MG) + 5 mit Stadtmauern + Macht mit
   Burgenbau + Macht × eigene Armeen in Reichweite. Ohne Helfer zählt Macht nicht.
 - **Flankieren:** zwei eigene Stellungen in Reichweite, gegenüber (mit Taktik beliebig), und
@@ -84,10 +85,18 @@ oder mehr, eine Partie dauert 20–40 s je Prozess.
   Zugende.
 - **Armeekosten:** Faktor × (Zahl der Armeen + 1); Faktor 5, mit Demokratie 4, mit
   Nationalismus 2.
-- **Sklaverei:** eine Bevölkerung opfern → `SLAVERY_COINS` Münzen (v110: 4, v84–v109: 7).
+- **Sklaverei:** eine Bevölkerung opfern → `SLAVERY_COINS` Münzen (seit v111: 5, v110: 4, v84–v109: 7).
   Konstanten der Regelmaschine liest `t.const(name)`.
 - **Wachstum:** ein bezahlter Schritt je Stadt und Runde (+1 mit Keramik, +1 mit Dampfmaschine);
   kostet Nahrung und Münzen in Höhe der Bevölkerung.
+- **Experimentelle Nationen (seit v111):** Rom, Venedig, Azteken, Ägypten, Deutschland, Maya,
+  China, USA – in Lobbys, Rundenspielen und Matchmaking wählbar (nicht in Ranglistenspielen und
+  Marathon). Im Bridge-Worker mit `expCivs: true` (Azteken und Ägypten nur mit `wonders`).
+  Venedig gründet keine Städte, wächst kostenlos und beansprucht je Runde 3 herrenlose Felder
+  (`claimTile`, wie Kolonialismus). China kann einmal je Partie das Einkommen sofort einsammeln –
+  dafür gibt es online keine Server-Aktion, der Bot nutzt es nicht.
+- **Plättchenkarten** beginnen online mit einer Platzierungsphase (`placement:start`, dann
+  `game:start`); `S.seed` ist je Partie zufällig und wird nicht an Clients geschickt.
 - **Siege:** Hauptstadt erobern, Wirtschaft (Anteil an der Weltbevölkerung, `victoryOption`),
   Forschung (Singularität).
 
@@ -116,7 +125,11 @@ Sklavenwirtschaft und eine frühe Belagerung der nächsten feindlichen Hauptstad
    ausführen. Weicht der größte Gewinn davon ab, spielt der Bot beide Varianten auf einer Kopie
    bis zum Zugende durch und nimmt die bessere (`lookahead`) – sonst wächst er oft die
    Hauptstadt und hat danach die Nahrung für eine Gründung nicht mehr.
-5. Opfern (Sklaverei), Armeen sammeln, Rest in Macht.
+5. Freie Felder beanspruchen (Kolonialismus, Venedig): die mit dem besten Ertrag.
+6. Opfern (Sklaverei), Armeen sammeln, Rest in Macht.
+
+Mit Rom rechnet der Angriff die Legion je Armee über die Regelmaschine; gegen ein feindliches Rom
+schätzt die Bedrohung bis zu +100 % je Angreifer (zwei Nachbarn).
 
 Angriffe und Verteidigung rechnen mit verdeckten Reserven: Opfern (Sklaverei), Alchemie
 (Wissenschaft → Münzen) und noch nicht erforschte Belagerung/Dynamit bzw. Stadtmauern/

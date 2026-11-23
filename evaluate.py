@@ -5,7 +5,8 @@
     python evaluate.py rusher --seed0 1000 -v      # verbose single-process run
 
 Modes: tile2 tile3 tile4 (tile map with placement), orig4 (original map, 4 players),
-custom2 custom3 custom4 (generated custom maps). The bot sits in every seat in turn, so seat
+custom2 custom3 custom4 (generated custom maps); with the experimental nations of v111+ in the
+draw (not in the default set): xtile2, xtile3 and xcustom4 (the last two with wonders). The bot sits in every seat in turn, so seat
 order and civilisation even out. A fair share is 1/n; the goal is far above it.
 """
 from __future__ import annotations
@@ -25,7 +26,12 @@ from hcbots.runner import play_game       # noqa: E402
 
 MODES = {"tile2": ("plaettchen", 2), "tile3": ("plaettchen", 3), "tile4": ("plaettchen", 4),
          "orig4": ("original", 4), "custom2": ("customgen", 2), "custom3": ("customgen", 3),
-         "custom4": ("customgen", 4)}
+         "custom4": ("customgen", 4),
+         # the experimental nations (Rome, Venice, Aztecs, Egypt, Germany, Maya, China, USA)
+         "xtile2": ("plaettchen", 2, {"expCivs": True}),
+         "xtile3": ("plaettchen", 3, {"expCivs": True, "wonders": True}),
+         "xcustom4": ("customgen", 4, {"expCivs": True, "wonders": True})}
+BASE_MODES = [m for m in MODES if not m.startswith("x")]
 
 
 def load_bot(name: str, opts: dict | None = None):
@@ -52,10 +58,11 @@ def run_jobs(args):
     out = []
     with Bridge() as br:
         for mode, seed, seat in jobs:
-            map_, n = MODES[mode]
+            map_, n, *rest = MODES[mode]
             seats = [{"kind": "ki", "kiLevel": opp_level} for _ in range(n)]
             seats[seat] = {"kind": "py"}
-            r = play_game(br, {seat: load_bot(bot_name, opts)}, seats, seed, map_, verbose=verbose)
+            r = play_game(br, {seat: load_bot(bot_name, opts)}, seats, seed, map_, verbose=verbose,
+                          **(rest[0] if rest else {}))
             r.update(mode=mode, seat=seat, win=seat in r["winners"])
             out.append(r)
             if verbose:
@@ -67,7 +74,7 @@ def run_jobs(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("bot")
-    ap.add_argument("--modes", nargs="*", default=list(MODES))
+    ap.add_argument("--modes", nargs="*", default=BASE_MODES)
     ap.add_argument("--seeds", type=int, default=12)
     ap.add_argument("--seed0", type=int, default=1)
     ap.add_argument("--jobs", type=int, default=8)

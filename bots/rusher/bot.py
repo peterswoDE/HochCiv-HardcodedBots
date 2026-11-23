@@ -7,9 +7,10 @@ Turn plan:
   1. free picks, research (military priority list; leftover science on cheap techs, never a
      modern-age tech while slavery pays)
   2. found cities on the best sites food allows
-  3. with slavery: grow every city, then sacrifice one population in every city (SLAVERY_COINS: 4 in v110)
+  3. with slavery: grow every city, then sacrifice one population in every city (SLAVERY_COINS: 5 since v111)
   4. military: strike the target capital if a winning siege is affordable this turn, else stage
      armies just outside its range; guard the own capital when an enemy could take it
+  4b. free claims (colonialism, Venice since v111): the free tiles with the best yield
   5. armies never stay in cities; all remaining coins go into power (resources don't carry
      over to the next turn, power does)
 """
@@ -17,7 +18,7 @@ from __future__ import annotations
 
 import math
 
-from hcbots.hexgrid import hex_distance, neighbors, within
+from hcbots.hexgrid import TERRAIN, hex_distance, key, neighbors, within
 
 from .econ import ClaimPlanner, EconPlanner
 
@@ -99,6 +100,7 @@ class Rusher:
             self.strike(tgt)
         if t.over:
             return
+        self.claim_tiles()
         pool = t.q("techPool", "$S") or []
         econ = dict(self.econ)
         if self.hold_siege:
@@ -353,6 +355,35 @@ class Rusher:
             try_(aid, set())
         return {aid: s for s, aid in owner.items()}
 
+    def claim_tiles(self):
+        """Colonialism or Venice (v111, cannot found cities): claim the ownerless tiles with the
+        best yield, as many as the round allows (unused claims expire). They count for the capital."""
+        t = self.t
+        left = t.q("claimsLeft", "$S", t.pi) or 0
+        if left <= 0:
+            return
+        n = len(t.S["players"])
+        owned = set()
+        for tiles in t.call([("controlledTiles", "$S", i) for i in range(n)]):
+            owned.update(tiles or [])
+        cities = {(c["r"], c["c"]) for c in t.S["cities"]}
+        free = [(r, c) for r, c in t.grid.cells() if t.grid.is_tile(r, c)
+                and not TERRAIN.get(t.grid.terrain(r, c), {}).get("block")
+                and key(r, c) not in owned and (r, c) not in cities]
+        kinds = sorted({t.grid.terrain(r, c) for r, c in free})
+        yields = dict(zip(kinds, t.call([("tileYield", "$S", t.pi, k) for k in kinds])))
+        w = (INCOME_W["sci"], INCOME_W["food"], INCOME_W["coins"])
+        scored = []
+        for r, c in free:
+            y = yields.get(t.grid.terrain(r, c)) or [0, 0, 0]
+            v = sum(a * b for a, b in zip(w, y))
+            if v > 0:
+                scored.append((v, r, c))
+        scored.sort(reverse=True)
+        for _, r, c in scored[:left]:
+            if t.act("claimTile", r=r, c=c):
+                break
+
     def attack_per_army(self, power):
         t = self.t
         per = power + (3 if t.has("belagerung") else 0)
@@ -512,15 +543,22 @@ class Rusher:
             built += 1
         if built < extra:
             return None
-        n = sum(1 for a in t.armies() if hex_distance(a["r"], a["c"], tgt["r"], tgt["c"]) <= rng
-                and not t.city_at(a["r"], a["c"]))
+        inr = [a for a in t.armies() if hex_distance(a["r"], a["c"], tgt["r"], tgt["c"]) <= rng
+               and not t.city_at(a["r"], a["c"])]
+        n = len(inr)
         if not n:
             return None
         defense = t.q("defenseValue", "$S", {"$city": tgt["id"]})
         base = t.q("powerOf", "$S", t.pi)
         need = 0
-        while n * self.attack_per_army(base + need) <= defense:
-            need += 1
+        if self.legion():
+            # Rome's Legion (v111): each army attacks with its own power, +50 % per adjacent own army
+            refs = [{"$army": a["id"]} for a in inr]
+            while t.q("attackValue", "$S", t.pi, n, base + need, refs) <= defense:
+                need += 1
+        else:
+            while n * self.attack_per_army(base + need) <= defense:
+                need += 1
         price = t.q("powerPrice", "$S", t.pi)
         coins = t.q("available", "$S", t.pi, "coins")
         if need * price > coins:
@@ -528,6 +566,13 @@ class Rusher:
         if need and t.act("buyPower", n=need):
             return None
         return (n, coins - need * price)
+
+    def legion(self, pi=None) -> bool:
+        t = self.t
+        pi = t.pi if pi is None else pi
+        if t.S["players"][pi].get("civ") != "rom":
+            return False                    # only Rome has the Legion: no engine call for the rest
+        return bool(t.q("hasLegion", {"$player": pi}))
 
     def stage(self, tgt):
         """Out of reach: build up to stage_armies and march them to just outside the target's
@@ -609,7 +654,9 @@ class Rusher:
                     per = pw0 + (budget - spent) // price
                     per += 3 if siege else 0
                     per *= 2 if ep["techs"].get("dynamit") else 1
-                    worst = max(worst, k * per)
+                    # Rome's Legion: attackers side by side, up to +100 % each (two neighbours)
+                    leg = (100 + 50 * min(k - 1, 2)) / 100 if self.legion(e) else 1
+                    worst = max(worst, int(k * per * leg))
         return worst
 
     def enemy_budgets(self, e, inc):

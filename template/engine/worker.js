@@ -46,7 +46,17 @@ const E = sandbox;
 const konst = name => vm.runInContext(`typeof ${name} !== 'undefined' ? ${name} : undefined`, sandbox);
 const VERSION = konst('APP_VERSION');
 const CIVS = konst('CIVS');
-const CIV_BY_KEY = Object.fromEntries(CIVS.map(c => [c.k, c]));
+// with the experimental nations (v111: EXP_CIVS, in games with the expCivs option)
+const ALL_CIVS = konst('ALL_CIVS') || CIVS;
+const CIV_BY_KEY = Object.fromEntries(ALL_CIVS.map(c => [c.k, c]));
+/* Nations a game draws from: the base ones, with exp also the experimental ones (those that need
+   wonders only with wonders) – as the server's lobby offers them (engine civKeysFor). */
+function civPool(exp, wo) {
+  const f = konst('civKeysFor');
+  return f ? f({ exp: !!exp, wo: !!wo }) : CIVS.map(c => c.k);
+}
+/* expCivs as the server applies it: tile and custom maps only (no marathon here at all). */
+const expOpts = (a, fixed) => ({ exp: !!a.expCivs && !fixed, wo: !!a.wonders });
 
 /* ------------------------------------------------------------------ games */
 const games = new Map();   // gid -> { S, py: Set<pi>, sandboxed?: true }
@@ -63,17 +73,18 @@ function mulberry(seed) {
 
 /* Seats: [{ kind: 'py'|'ki'|'bot', civ?, ability?, kiLevel? }]. Missing civ/ability are drawn
    from the seed: tile and custom maps allow any nation (also twice), the original map needs
-   distinct ones. */
-function makePlayers(seats, seed, distinct) {
+   distinct ones. opts: { exp, wo } – the experimental nations in the draw (expOpts). */
+function makePlayers(seats, seed, distinct, opts = {}) {
   const rnd = mulberry(seed ^ 0x5bd1e995);
   const used = new Set(seats.filter(s => s.civ).map(s => s.civ));
   return seats.map(s => {
     let civ = s.civ;
     if (!civ) {
-      const pool = CIVS.map(c => c.k).filter(k => !distinct || !used.has(k));
+      const pool = civPool(opts.exp, opts.wo).filter(k => !distinct || !used.has(k));
       civ = pool[Math.floor(rnd() * pool.length)];
       used.add(civ);
     }
+    if (!CIV_BY_KEY[civ]) throw new Error(`engine ${VERSION} has no nation ${civ}`);
     const abilities = CIV_BY_KEY[civ].abilities || [{ k: 'basis' }];
     const ability = s.ability || abilities[Math.floor(rnd() * abilities.length)].k;
     const kind = s.kind === 'py' ? 'human' : s.kind;
@@ -131,7 +142,7 @@ function placeChoices(plan, seat, player) {
    Python picks { o, cell } per seat and passes them to reset as `placements`. */
 function tilePlanFor(a) {
   const seed = (a.seed ?? 0) | 0;
-  const players = makePlayers(a.players, seed, false);
+  const players = makePlayers(a.players, seed, false, expOpts(a, a.map === 'original'));
   const plan = E.tilePlan(players.map(p => p.civ), seed, { hex: a.map === 'plaettchen-hex' });
   if (!plan) throw new Error('no tile map for ' + players.length + ' players');
   const seats = plan.seats.filter(s => a.players[s.idx].kind === 'py')
@@ -141,14 +152,16 @@ function tilePlanFor(a) {
 }
 
 /* map: 'plaettchen' (tile map with placement), 'plaettchen-hex', 'original', 'customgen' (a random
-   custom map, genCustomMap) or a custom map object as stored by the map editor.
+   custom map, genCustomMap) or a custom map object as stored by the map editor. Since v111 the
+   engine has one tile map per player count ('plaettchen-hex' is the same). expCivs: the
+   experimental nations in the draw (not on the original map).
    placements: { seatIdx: { o, cell } } for the py seats on tile maps (tilePlanFor); a py seat
    without one is placed like a bot. ki seats place with the JS KI, bots like bots. */
 function reset(a) {
   const seed = (a.seed ?? Math.floor(Math.random() * 2 ** 31)) | 0;
   const map = a.map === 'customgen' ? genCustomMap(seed, a.players.length) : (a.map || 'plaettchen');
   const fixed = map === 'original';
-  const players = makePlayers(a.players, seed, fixed);
+  const players = makePlayers(a.players, seed, fixed, expOpts(a, fixed));
   const cfg = {
     seed, players, duel: players.length === 2, events: !!a.events,
     eventMode: a.eventMode === 'easy' ? 'easy' : 'hard', wonders: !!a.wonders, startPlayer: a.startPlayer ?? 0,
@@ -250,11 +263,12 @@ function serverAction(g, type, params) {
 
 /* ------------------------------------------------------------------ rules oracle
    `call`: { fn, args } – any engine function, arguments as JSON with references:
-     "$S" the game state, {"$city": id}, {"$army": id}, {"$player": pi}.
+     "$S" the game state, {"$city": id}, {"$army": id}, {"$player": pi}, also inside lists.
    The planners of the JS KI and the bots are off limits: the decisions are made in Python. */
 const FORBIDDEN = /^(ki|bot|rush)/i;
 function resolve(S, v) {
   if (v === '$S') return S;
+  if (Array.isArray(v)) return v.map(x => resolve(S, x));     // lists of armies etc. (attackValue)
   if (v && typeof v === 'object' && !Array.isArray(v)) {
     if ('$city' in v) return S.cities.find(c => c.id === v.$city) || null;
     if ('$army' in v) return S.armies.find(a => a.id === v.$army) || null;
@@ -351,7 +365,7 @@ function game(a) {
   return g;
 }
 const handlers = {
-  info: () => ({ version: VERSION, engineDir: ENGINE_DIR, civs: CIVS.map(c => c.k) }),
+  info: () => ({ version: VERSION, engineDir: ENGINE_DIR, civs: CIVS.map(c => c.k), expCivs: ALL_CIVS.filter(c => c.exp).map(c => c.k) }),
   tile_plan: a => tilePlanFor(a),
   // placement choices on a server plan (online): { plan, seatIdx, player: {civ, ability} }
   place_choices: a => {

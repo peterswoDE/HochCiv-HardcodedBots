@@ -26,16 +26,17 @@ def public(state):
 
 
 def play(brain, server, mode, seed, seat):
-    map_, n = MODES[mode]
+    map_, n, *rest = MODES[mode]
+    opts = rest[0] if rest else {}         # x-modes: experimental nations (v111+)
     seats = [{"kind": "ki", "kiLevel": "schwer"} for _ in range(n)]
     seats[seat] = {"kind": "py"}
     placements = {}
     if map_ == "plaettchen":
-        tp = server.call("tile_plan", players=seats, seed=seed, map=map_)
+        tp = server.call("tile_plan", players=seats, seed=seed, map=map_, **opts)
         for s in tp["seats"]:
             o, cell = brain.place(tp["plan"], s["idx"], {"civ": s["civ"], "ability": s["ability"]})
             placements[str(s["idx"])] = {"o": o, "cell": cell}
-    gid = server.call("reset", players=seats, seed=seed, map=map_, placements=placements)["gid"]
+    gid = server.call("reset", players=seats, seed=seed, map=map_, placements=placements, **opts)["gid"]
     slot_of = [p["slot"] for p in server.call("state", gid=gid)["state"]["players"]]
     me = slot_of.index(seat)
     sent = [0]

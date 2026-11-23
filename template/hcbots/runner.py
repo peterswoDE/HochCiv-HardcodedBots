@@ -39,7 +39,8 @@ def play_game(bridge: Bridge, bots: dict, seats: list[dict], seed: int, map_: st
     t0 = time.time()
     placements = {}
     if map_ in ("plaettchen", "plaettchen-hex"):
-        tp = bridge.call("tile_plan", players=seats, seed=seed, map=map_)
+        # same options as reset: with expCivs the nations drawn depend on them
+        tp = bridge.call("tile_plan", players=seats, seed=seed, map=map_, **opts)
         for s in tp["seats"]:
             bot = bots[s["idx"]]
             choice = bot.place(s, tp["plan"]) if hasattr(bot, "place") else None
